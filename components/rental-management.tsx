@@ -20,7 +20,7 @@ import type { Rental, RentalStatus } from "@/types/rental"
 import { RentalProcess } from "@/components/rental-process"
 
 export function RentalManagement() {
-  const [rentals, setRentals] = useState<Rental[]>([
+  const [rentals] = useState<Rental[]>([
     {
       id: "1",
       status: "en_proceso",
