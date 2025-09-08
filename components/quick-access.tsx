@@ -11,28 +11,28 @@ export function QuickAccess() {
       status: "En Proceso",
       count: 23,
       icon: Clock,
-      color: "bg-yellow-100 text-yellow-800 border-yellow-200",
-      iconColor: "text-yellow-600",
+      color: "bg-primary text-white border-primary",
+      iconColor: "text-primary",
     },
     {
       status: "Completados",
       count: 156,
       icon: CheckCircle,
-      color: "bg-green-100 text-green-800 border-green-200",
-      iconColor: "text-green-600",
+      color: "bg-secondary text-white border-secondary",
+      iconColor: "text-secondary",
     },
     {
       status: "Pendientes",
       count: 12,
       icon: AlertCircle,
-      color: "bg-orange-100 text-orange-800 border-orange-200",
-      iconColor: "text-orange-600",
+      color: "bg-[#4F4F4F] text-white border-[#4F4F4F]",
+      iconColor: "text-[#4F4F4F]",
     },
     {
       status: "Cancelados",
       count: 8,
       icon: XCircle,
-      color: "bg-red-100 text-red-800 border-red-200",
+      color: "bg-red-600 text-white border-red-600",
       iconColor: "text-red-600",
     },
   ]
@@ -54,12 +54,15 @@ export function QuickAccess() {
               className="h-auto p-4 flex flex-col items-center space-y-2 hover:bg-muted/50 bg-transparent"
             >
               <item.icon className={`h-6 w-6 ${item.iconColor}`} />
-              <div className="text-center">
-                <div className="font-semibold text-foreground">{item.status}</div>
-                <Badge variant="secondary" className={`mt-1 ${item.color}`}>
-                  {item.count}
-                </Badge>
-              </div>
+              <span
+                className={`inline-flex items-center px-2 py-1 rounded-md leading-none text-[14px] font-bold ${item.color}`}
+              >
+                {item.status}
+              </span>
+              <Badge variant="outline" className="mt-1 bg-transparent border-0">
+  {item.count}
+</Badge>
+
             </Button>
           ))}
         </div>

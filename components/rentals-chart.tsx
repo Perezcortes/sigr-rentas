@@ -1,8 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Cell } from "recharts"
 
 const chartData = [
   { month: "Ene", rentals: 45 },
@@ -19,14 +20,17 @@ const chartData = [
   { month: "Dic", rentals: 78 },
 ]
 
+// Color base de la serie = primario (expuesto como --color-rentals por ChartContainer)
 const chartConfig = {
   rentals: {
     label: "Rentas",
-    color: "hsl(var(--chart-1))",
+    color: "var(--color-primary)",
   },
-}
+} as const
 
 export function RentalsChart() {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+
   return (
     <Card className="border-border">
       <CardHeader>
@@ -42,11 +46,27 @@ export function RentalsChart() {
                 tickLine={false}
                 tickMargin={10}
                 axisLine={false}
-                tickFormatter={(value) => value}
               />
               <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-              <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-              <Bar dataKey="rentals" fill="var(--color-rentals)" radius={4} />
+
+              {/* Cursor del tooltip con tinte primario */}
+              <ChartTooltip
+                cursor={{ fill: "var(--color-primary)", opacity: 0.12 }}
+                content={<ChartTooltipContent hideLabel />}
+              />
+
+              {/* Barras: base primario, hover secundario */}
+              <Bar dataKey="rentals" radius={4} isAnimationActive>
+                {chartData.map((_, i) => (
+                  <Cell
+                    key={`cell-${i}`}
+                    fill={activeIndex === i ? "var(--color-secondary)" : "var(--color-rentals)"}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    onMouseLeave={() => setActiveIndex(null)}
+                    style={{ transition: "fill 160ms ease" }}
+                  />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartContainer>

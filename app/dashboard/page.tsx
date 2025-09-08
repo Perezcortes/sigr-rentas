@@ -10,7 +10,7 @@ import { QuickAccess } from "@/components/quick-access"
 
 export default function DashboardPage() {
   return (
-    <ProtectedRoute requiredPermission="dashboard">
+    <ProtectedRoute>
       <DashboardLayout>
         <div className="space-y-6">
           {/* Page Header */}

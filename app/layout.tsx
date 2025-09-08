@@ -9,6 +9,12 @@ export const metadata: Metadata = {
   title: "Sistema Inteligente de Gestión Rentas.com",
   description: "Sistema de gestión integral para propiedades en renta",
   generator: "v0.app",
+  icons: {
+    icon: [
+      { url: "/sigr_images/favicon.png", type: "image/png", sizes: "32x32" },
+    ],
+    shortcut: ["/sigr_images/favicon.png"],
+  },
 }
 
 export default function RootLayout({

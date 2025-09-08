@@ -51,9 +51,9 @@ export function DashboardStats() {
             <div className="text-2xl font-bold text-foreground">{stat.value}</div>
             <div className="flex items-center text-xs text-muted-foreground">
               {stat.trend === "up" ? (
-                <TrendingUp className="mr-1 h-3 w-3 text-green-600" />
+                <TrendingUp className="mr-1 h-3 w-3 text-primary" />
               ) : (
-                <TrendingDown className="mr-1 h-3 w-3 text-red-600" />
+                <TrendingDown className="mr-1 h-3 w-3 text-secondary" />
               )}
               <span className={stat.trend === "up" ? "text-green-600" : "text-red-600"}>{stat.change}</span>
               <span className="ml-1">vs mes anterior</span>
