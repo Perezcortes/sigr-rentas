@@ -115,11 +115,7 @@ function normalizeRole(value: any): UserRole {
   return map[v] ?? "agente"
 }
 
-/**
- * Preferencias de origen:
- *  - PERMISOS: JWT -> me.permissions -> me.role.permissions -> login.user.permissions
- *  - ROL: JWT -> me.role -> login.user.role
- */
+
 function pickNormalizedUser(me: any, loginBody: any, accessToken: string | null): User {
   const jwt = decodeJwt<JwtClaims>(accessToken)
 
@@ -131,7 +127,6 @@ function pickNormalizedUser(me: any, loginBody: any, accessToken: string | null)
 
   const role = normalizeRole(jwt?.role ?? me?.role ?? loginBody?.user?.role)
 
-  // nombre amigable (no obligatorio, pero útil)
   const name =
     me?.full_name ||
     [me?.first_name, me?.last_name].filter(Boolean).join(" ").trim() ||
@@ -361,3 +356,13 @@ export function getRoleDisplayName(role: UserRole): string {
   }
   return roleNames[role]
 }
+
+// --- wrapper público para usar el core request con auto-refresh ---
+export async function api<T = any>(
+  path: string,
+  init: RequestInit = {},
+  opts?: { expectJson?: boolean; timeoutMs?: number; retryOn401?: boolean }
+): Promise<T> {
+  return req<T>(path, init, opts) // usa el mismo req con Bearer + refresh
+}
+
