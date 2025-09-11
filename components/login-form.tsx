@@ -15,6 +15,74 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/auth-context"
 
+function normalize(s: string) {
+  return s.trim()
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+type MaybeHttpError = {
+  status?: number
+  message?: string
+  code?: string | number
+  response?: {
+    status?: number
+    data?: any
+  }
+}
+
+/** Traduce distintos formatos de error a mensajes para el usuario */
+function parseAuthError(err: unknown): string {
+  const e = err as MaybeHttpError
+  const status =
+    e?.status ??
+    e?.response?.status ??
+    (typeof e?.code === "number" ? e.code : undefined)
+
+  const msg = (e?.message || "").toLowerCase()
+  const serverMsg = (e?.response as any)?.data?.message
+  const serverMsgNorm = (Array.isArray(serverMsg) ? serverMsg[0] : serverMsg)?.toLowerCase?.() || ""
+
+  if (
+    status === 404 ||
+    msg.includes("user not found") ||
+    serverMsgNorm.includes("user not found") ||
+    serverMsgNorm.includes("usuario no encontrado") ||
+    msg.includes("no user") ||
+    serverMsgNorm.includes("no existe usuario")
+  ) {
+    return "No existe una cuenta con ese correo."
+  }
+
+  if (
+    status === 401 ||
+    msg.includes("invalid password") ||
+    msg.includes("wrong password") ||
+    serverMsgNorm.includes("invalid password") ||
+    serverMsgNorm.includes("contraseña incorrecta") ||
+    serverMsgNorm.includes("clave incorrecta")
+  ) {
+    return "La contraseña es incorrecta."
+  }
+
+  if (
+    status === 423 ||
+    msg.includes("locked") ||
+    serverMsgNorm.includes("locked") ||
+    serverMsgNorm.includes("bloqueada")
+  ) {
+    return "Tu cuenta está temporalmente bloqueada. Intenta más tarde o contacta al administrador."
+  }
+
+  if (status === 429 || msg.includes("too many") || serverMsgNorm.includes("demasiados intentos")) {
+    return "Demasiados intentos. Intenta de nuevo en unos minutos."
+  }
+
+  return "No se pudo iniciar sesión. Intenta de nuevo."
+}
+
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -37,26 +105,44 @@ export function LoginForm() {
     if (isLoading) return
     setError("")
 
-    const emailNorm = email.trim().toLowerCase()
-    const passNorm = password.trim()
+    const emailNorm = normalize(email).toLowerCase()
+    const passNorm = normalize(password)
 
     if (!emailNorm || !passNorm) {
       setError("Por favor, completa todos los campos")
       return
     }
+    if (!isValidEmail(emailNorm)) {
+      setError("Ingresa un correo válido")
+      return
+    }
 
     try {
-      const ok = await login(emailNorm, passNorm)
-      if (ok) {
-        router.replace(next) // evita volver al login con Back
-      } else {
-        setError("Credenciales incorrectas. Verifica tu email y contraseña.")
+      const result = await login(emailNorm, passNorm)
+
+      if (typeof result === "boolean") {
+        if (result) {
+          router.replace(next)
+        } else {
+          setError("Credenciales incorrectas. Verifica tu email y contraseña.")
+        }
+        return
       }
+
+      const ok = (result as any)?.ok
+      if (ok) {
+        router.replace(next)
+        return
+      }
+
+      const maybeErrMsg = parseAuthError(result as any)
+      setError(maybeErrMsg)
     } catch (err: any) {
-      // Si tu authenticateUser lanza el mensaje del backend, muéstralo:
-      setError(err?.message || "No se pudo iniciar sesión. Intenta de nuevo.")
+      setError(parseAuthError(err))
     }
   }
+
+  const canSubmit = !!email && !!password && isValidEmail(email)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
@@ -132,7 +218,7 @@ export function LoginForm() {
                 </div>
               </div>
 
-              {/* Alert con animación (Framer Motion) */}
+              {/* Alert con animación */}
               <AnimatePresence initial={false} mode="popLayout">
                 {error && (
                   <motion.div
@@ -153,7 +239,7 @@ export function LoginForm() {
               <Button
                 type="submit"
                 className="w-full bg-tertiary hover:bg-tertiary/90 text-tertiary-foreground"
-                disabled={isLoading || !email || !password}
+                disabled={isLoading || !canSubmit}
               >
                 {isLoading ? (
                   <>
@@ -175,7 +261,7 @@ export function LoginForm() {
         </Card>
 
         {/* Demo Credentials */}
-        <Card className="border-border bg-muted/50">
+        {/* <Card className="border-border bg-muted/50">
           <CardContent className="pt-6">
             <h3 className="font-semibold text-sm mb-3 text-foreground">Credenciales de prueba:</h3>
             <div className="space-y-2 text-xs text-muted-foreground">
@@ -184,7 +270,7 @@ export function LoginForm() {
               <div><strong>Agente:</strong> agente@rentas.com / agente123</div>
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
 
         {/* Footer */}
         <div className="text-center text-sm text-muted-foreground">

@@ -1,8 +1,7 @@
-// lib/api.ts
 import axios from 'axios'
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL, // ej. http://localhost:3000
+  baseURL: process.env.NEXT_PUBLIC_API_URL, 
 })
 
 api.interceptors.request.use((config) => {
@@ -13,7 +12,6 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// (Opcional) auto-refresh muy simple
 let refreshing = false
 let queue: Array<() => void> = []
 

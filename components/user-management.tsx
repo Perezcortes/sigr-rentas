@@ -34,11 +34,9 @@ interface SystemUser {
   lastLogin: string
 }
 
-/** ==== Config API ==== */
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
 const BASE = RAW.replace(/\/+$/, "")
 
-/** ==== Mapeo de roles <-> role_id (según tu seed típico) ==== */
 const ROLE_ID_BY_ROLE: Record<UserRole, number> = {
   administrador: 1,
   gerente: 2,
@@ -51,9 +49,7 @@ const ROLE_BY_ID: Record<number, UserRole> = Object.fromEntries(
   Object.entries(ROLE_ID_BY_ROLE).map(([k, v]) => [v, k as UserRole])
 ) as Record<number, UserRole>
 
-/** ==== Helpers de normalización (alineados a tu JSON) ==== */
 function normalizeRoleToUserRole(value: any): UserRole {
-  // acepta objetos { nombre } o strings
   const raw =
     typeof value === "object" && value
       ? value.nombre ?? value.name ?? value.code ?? value.display_name ?? ""
@@ -80,7 +76,6 @@ function normalizeRoleToUserRole(value: any): UserRole {
 }
 
 function toSystemUser(u: any): SystemUser {
-  // nombre completo en español
   const fullName =
     u?.nombre_completo ||
     [u?.nombres, u?.primer_apellido, u?.segundo_apellido].filter(Boolean).join(" ").trim() ||
@@ -89,16 +84,13 @@ function toSystemUser(u: any): SystemUser {
     (u?.correo ?? u?.email)?.split("@")?.[0] ||
     "Sin nombre"
 
-  // email
   const email = u?.correo ?? u?.email ?? ""
 
-  // rol desde role.nombre o role_id
   let role: UserRole = normalizeRoleToUserRole(u?.role ?? u?.rol)
   if (!role && typeof u?.role_id === "number") {
     role = ROLE_BY_ID[u.role_id] ?? "agente"
   }
-
-  // oficinas: concatena todas por nombre si hay varias
+  // oficinasconcatenadas
   let oficinaName = "—"
   const offices = u?.offices ?? u?.oficinas ?? u?.office ?? u?.oficina
   if (Array.isArray(offices) && offices.length) {
@@ -110,7 +102,7 @@ function toSystemUser(u: any): SystemUser {
     oficinaName = typeof offices === "object" ? (offices.nombre ?? offices.name ?? "—") : String(offices)
   }
 
-  // permisos (si en el futuro vienen como 'permisos' u 'permissions')
+  // permisos
   const rawPerms = u?.permisos ?? u?.permissions ?? u?.role?.permisos ?? u?.role?.permissions ?? []
   const permissions: string[] = Array.isArray(rawPerms)
     ? rawPerms
@@ -118,7 +110,7 @@ function toSystemUser(u: any): SystemUser {
         .filter(Boolean)
     : []
 
-  // estado y último acceso
+  // estado
   const isActive =
     typeof u?.is_active === "boolean"
       ? u.is_active
@@ -148,7 +140,6 @@ function toSystemUser(u: any): SystemUser {
   }
 }
 
-/** ==== Helpers UI ==== */
 const availablePermissions = [
   { id: "dashboard", label: "Dashboard" },
   { id: "reportes", label: "Reportes" },
@@ -190,30 +181,25 @@ export function UserManagement() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  // ===== Modal & formulario =====
+  // modal
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null)
 
-  // Form alineado a Swagger (POST/ PATCH)
   const [formData, setFormData] = useState({
-    // Campos en español
     nombres: "",
     primer_apellido: "",
     segundo_apellido: "",
     correo: "",
     telefono: "",
     whatsapp: "",
-    role: "agente" as UserRole, // para elegir role_id
+    role: "agente" as UserRole, 
     isActive: true,
-    // Oficinas (IDs separados por coma/espacios, UI-friendly)
     officesText: "",
-    // Contraseña: requerida al crear, opcional al editar
     password: genTempPassword(),
-    // Permisos opcionales (UI local)
     permissions: [] as string[],
   })
 
-  // ===== Carga desde backend =====
+  // carga desde back
   async function fetchUsersFromApi() {
     setLoading(true)
     setError(null)
@@ -245,7 +231,7 @@ export function UserManagement() {
     fetchUsersFromApi()
   }, [])
 
-  // ===== Crear / Actualizar / Eliminar =====
+  // crud
   async function createUser() {
     setSubmitting(true)
     setError(null)
@@ -256,17 +242,16 @@ export function UserManagement() {
       const role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
       const offices = parseOfficeIds(formData.officesText)
 
-      // Payload EXACTO según Swagger POST /users
       const payload: any = {
         nombres: formData.nombres,
         primer_apellido: formData.primer_apellido,
         segundo_apellido: formData.segundo_apellido,
         correo: formData.correo,
-        password: formData.password, // requerido al crear
+        password: formData.password, 
         role_id,
         telefono: formData.telefono || undefined,
         whatsapp: formData.whatsapp || undefined,
-        offices, // [{ id }]
+        offices, 
         is_active: formData.isActive,
       }
 
@@ -304,7 +289,6 @@ export function UserManagement() {
       const role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
       const offices = parseOfficeIds(formData.officesText)
 
-      // Payload EXACTO según Swagger PATCH /users/{id}
       const payload: any = {
         nombres: formData.nombres,
         primer_apellido: formData.primer_apellido,
@@ -316,7 +300,6 @@ export function UserManagement() {
         offices,
         is_active: formData.isActive,
       }
-      // password es OPCIONAL en PATCH
       if (formData.password && formData.password.trim().length > 0) {
         payload.password = formData.password.trim()
       }
@@ -344,7 +327,7 @@ export function UserManagement() {
     }
   }
 
-  // ===== CRUD UI =====
+  // uicrud
   const handleAddUser = () => {
     setEditingUser(null)
     setFormData({
@@ -366,8 +349,6 @@ export function UserManagement() {
   }
 
   const handleEditUser = (user: SystemUser) => {
-    // Como la lista no trae teléfono/whatsapp/ids de oficinas directamente, el usuario puede completarlos.
-    // Intentamos dividir el nombre para precargar.
     const parts = user.name.trim().split(/\s+/)
     let nombres = ""
     let primer_apellido = ""
@@ -393,8 +374,8 @@ export function UserManagement() {
       whatsapp: "",
       role: user.role,
       isActive: user.isActive,
-      officesText: "", // el admin puede escribir "1,2" si aplica
-      password: "", // opcional al editar
+      officesText: "",
+      password: "",
       permissions: user.permissions ?? [],
     })
     setIsDialogOpen(true)
@@ -410,7 +391,13 @@ export function UserManagement() {
     }
   }
 
+  // delete
   const handleDeleteUser = async (id: string) => {
+    const confirmar = typeof window !== "undefined"
+      ? window.confirm("¿Eliminar este usuario? (soft delete)")
+      : true
+    if (!confirmar) return
+
     setSubmitting(true)
     setError(null)
     setSuccess(null)
@@ -422,10 +409,22 @@ export function UserManagement() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       })
-      if (!res.ok) {
-        const body = await res.text().catch(() => "")
-        throw new Error(body || `Error ${res.status}`)
+
+      if (res.status === 204) {
+        setSuccess("Usuario eliminado")
+        await fetchUsersFromApi()
+        return
       }
+
+      if (!res.ok) {
+        let msg = `Error ${res.status}`
+        try {
+          const text = await res.text()
+          msg = text || msg
+        } catch {}
+        throw new Error(msg)
+      }
+
       setSuccess("Usuario eliminado")
       await fetchUsersFromApi()
     } catch (e: any) {
@@ -476,7 +475,6 @@ export function UserManagement() {
               </DialogHeader>
 
               <div className="grid gap-4 py-4">
-                {/* Nombres y Apellidos */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="nombres">Nombres</Label>
@@ -611,7 +609,7 @@ export function UserManagement() {
                   )}
                 </div>
 
-                {/* Permisos opcionales (si tu backend llegara a aceptarlos) */}
+                {/* Permisos opcionales (solo UI) */}
                 <div className="space-y-3">
                   <Label>Permisos (opcional, UI)</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">

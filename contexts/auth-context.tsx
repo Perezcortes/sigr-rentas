@@ -1,4 +1,3 @@
-// src/contexts/auth-context.tsx
 "use client"
 
 import type React from "react"
@@ -21,7 +20,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-/* ===== Helpers de normalización ===== */
 
 type NormalizedRole =
   | "administrador"
@@ -90,7 +88,6 @@ function pickPermissions(u: any, jwtPerms?: string[]): string[] {
   const fromJwt = Array.isArray(jwtPerms) ? jwtPerms : []
 
   const all = [...fromUserArray, ...fromUserObjects, ...fromRoleObjects, ...fromJwt]
-  // deduplicar y normalizar a string
   return Array.from(new Set(all.map(String)))
 }
 
@@ -99,14 +96,12 @@ function normalizeUser(serverUser: any): User {
   const roleSource = serverUser?.role ?? jwt?.role
   const role = normalizeRole(roleSource)
 
-  // nombre legible
   const fullName =
     serverUser?.full_name ||
     [serverUser?.first_name, serverUser?.last_name].filter(Boolean).join(" ").trim() ||
     serverUser?.name ||
     serverUser?.email
 
-  // oficina: acepta objeto o string
   const office = serverUser?.office ?? serverUser?.oficina
   const oficina =
     typeof office === "object"
@@ -117,22 +112,20 @@ function normalizeUser(serverUser: any): User {
 
   const permissions = pickPermissions(serverUser, jwt?.permissions)
 
-  // construimos un User sin romper el tipo (conservamos campos originales)
   const normalized: any = {
     ...serverUser,
     id: serverUser?.id ?? jwt?.sub,
     email: serverUser?.email ?? jwt?.email,
     role,
     full_name: fullName,
-    oficina: oficina, // para tu UI
-    office: office, // mantenemos original si era objeto
+    oficina: oficina, 
+    office: office, 
     permissions,
   }
 
   return normalized as User
 }
 
-/* ===== Reducer ===== */
 
 function authReducer(state: AuthState, action: AuthAction): AuthState {
   switch (action.type) {
@@ -151,7 +144,6 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
   }
 }
 
-/* ===== Provider ===== */
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, {
@@ -160,7 +152,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
   })
 
-  // Al montar: intenta sesión real; si no hay, intenta restaurar del cache siempre normalizando
   useEffect(() => {
     ;(async () => {
       const remote = await fetchProfile().catch(() => null)
@@ -177,7 +168,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsed = JSON.parse(savedUser)
           const normalized = normalizeUser(parsed)
-          // re-escribe por si antes quedó sin normalizar
           localStorage.setItem("rentas_user", JSON.stringify(normalized))
           dispatch({ type: "RESTORE_SESSION", payload: normalized })
           return
@@ -189,7 +179,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })()
   }, [])
 
-  // Sincroniza entre pestañas (incluye borrado de token)
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "rentas_user") {
@@ -215,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     dispatch({ type: "LOGIN_START" })
     try {
-      const serverUser = await authenticateUser(email, password) // guarda tokens y trae /auth/profile
+      const serverUser = await authenticateUser(email, password)
       if (!serverUser) {
         dispatch({ type: "LOGIN_FAILURE" })
         throw new Error("Credenciales inválidas")
@@ -237,7 +226,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  // hasPermission opera sobre el user ya normalizado
   const hasPermission = (perm: string) => hasPermFn(state.user, perm)
 
   return (

@@ -1,12 +1,9 @@
-// src/lib/auth.ts
 import type { User, UserRole } from "@/types/auth"
 
-/** === Config === */
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
 const BASE = RAW.replace(/\/+$/, "")
 const DEFAULT_TIMEOUT_MS = 12_000
 
-// =================== Storage helpers ===================
 const getAccess = () =>
   typeof window !== "undefined" ? localStorage.getItem("access_token") : null
 const setAccess = (t?: string) => {
@@ -24,7 +21,6 @@ const setRefresh = (t?: string) => {
   }
 }
 
-// =================== Utils básicos ===================
 async function jsonOrText(res: Response) {
   const text = await res.text()
   try {
@@ -39,7 +35,6 @@ function extractMessage(body: any, fallback: string) {
   return body.message ?? body.error ?? fallback
 }
 
-// =================== JWT helpers & normalizadores ===================
 type JwtClaims = { permissions?: string[]; role?: string; sub?: string; email?: string }
 
 function b64UrlToUtf8(b64url: string): string {
@@ -75,7 +70,9 @@ function normalizePermissions(input: any): string[] {
   let arr: string[] = []
   if (Array.isArray(input)) {
     if (input.length > 0 && typeof input[0] === "object") {
-      arr = input.map((p) => p?.name).filter((x) => typeof x === "string")
+      arr = input
+        .map((p) => p?.name ?? p?.nombre)
+        .filter((x) => typeof x === "string")
     } else {
       arr = input.filter((p) => typeof p === "string")
     }
@@ -87,7 +84,6 @@ function extractRoleString(value: any): string {
   if (!value) return ""
   if (typeof value === "string") return value
   if (typeof value === "object") {
-    // soporta { name, code, display_name }
     return value.name ?? value.code ?? value.display_name ?? ""
   }
   return String(value ?? "")
@@ -115,7 +111,6 @@ function normalizeRole(value: any): UserRole {
   return map[v] ?? "agente"
 }
 
-
 function pickNormalizedUser(me: any, loginBody: any, accessToken: string | null): User {
   const jwt = decodeJwt<JwtClaims>(accessToken)
 
@@ -133,7 +128,6 @@ function pickNormalizedUser(me: any, loginBody: any, accessToken: string | null)
     me?.name ||
     me?.email
 
-  // oficina: permite string u objeto
   const oficina =
     (typeof me?.office === "object" ? me?.office?.name : me?.office) ??
     me?.oficina ?? null
@@ -147,7 +141,6 @@ function pickNormalizedUser(me: any, loginBody: any, accessToken: string | null)
   } as unknown as User
 }
 
-// =================== Refresh control (single-flight) ===================
 let refreshingPromise: Promise<string | null> | null = null
 async function refreshAccessTokenOnce(): Promise<string | null> {
   if (refreshingPromise) return refreshingPromise
@@ -188,7 +181,6 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
   }
 }
 
-// =================== Core request (timeout + Bearer + auto-refresh) ===================
 async function req<T = any>(
   path: string,
   init: RequestInit = {},
@@ -257,7 +249,6 @@ async function req<T = any>(
   }
 }
 
-// =================== Tipos del login del backend ===================
 type LoginBody = { email: string; password: string }
 type LoginResponse = {
   access_token?: string
@@ -269,7 +260,6 @@ type LoginResponse = {
   token_type?: "Bearer"
 } & Record<string, any>
 
-// =================== API de autenticación ===================
 export async function authenticateUser(email: string, password: string): Promise<User | null> {
   const loginBody = await req<LoginResponse>("/auth/login", {
     method: "POST",
@@ -316,13 +306,12 @@ export async function logoutServer(): Promise<void> {
   }
 }
 
-/* === Permisos & roles === */
 export function hasPermission(user: User | null, permission?: string): boolean {
   if (!user) return false
 
   const raw = (user as any)?.permissions ?? []
   const list: string[] = Array.isArray(raw)
-    ? raw.map((p: any) => (typeof p === "string" ? p : p?.name)).filter(Boolean)
+    ? raw.map((p: any) => (typeof p === "string" ? p : p?.name ?? p?.nombre)).filter(Boolean)
     : []
 
   const role = String((user as any)?.role ?? "").toLowerCase()
@@ -333,10 +322,8 @@ export function hasPermission(user: User | null, permission?: string): boolean {
   // globales
   if (list.includes("all") || list.includes("sistema.administrar")) return true
 
-  // si no se pide permiso concreto, con estar autenticado basta
   if (!permission) return true
 
-  // comodín: "usuarios.*" concede "usuarios.crear", etc.
   if (permission.includes(".")) {
     const [resource] = permission.split(".")
     if (list.includes(`${resource}.*`)) return true
@@ -357,12 +344,10 @@ export function getRoleDisplayName(role: UserRole): string {
   return roleNames[role]
 }
 
-// --- wrapper público para usar el core request con auto-refresh ---
 export async function api<T = any>(
   path: string,
   init: RequestInit = {},
   opts?: { expectJson?: boolean; timeoutMs?: number; retryOn401?: boolean }
 ): Promise<T> {
-  return req<T>(path, init, opts) // usa el mismo req con Bearer + refresh
+  return req<T>(path, init, opts)
 }
-
