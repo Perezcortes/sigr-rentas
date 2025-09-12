@@ -20,12 +20,15 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Building2, Plus, Edit, Trash2, MapPin, Phone, Mail, RefreshCw } from "lucide-react"
 
+/* ===== Tipos ===== */
 interface Branch {
-  id: string         
+  id: string            // hash devuelto por la API
   name: string
   address: string
-  city: string
-  state: string
+  cityName: string      // para mostrar
+  stateName: string     // para mostrar
+  cityId?: number       // para enviar a la API
+  stateId?: number      // para enviar a la API
   phone: string
   email: string
   manager: string
@@ -33,6 +36,18 @@ interface Branch {
   employees: number
 }
 
+const initialForm = {
+  name: "",
+  address: "",
+  cityId: "" as number | string,
+  stateId: "" as number | string,
+  phone: "",
+  email: "",
+  manager: "",
+  status: "active" as "active" | "inactive",
+}
+
+/* ========= Normalizador API -> UI ========= */
 function toBranch(row: any): Branch {
   const id = String(row?.id ?? row?.uuid ?? crypto.randomUUID())
   const nombre = row?.nombre ?? row?.name ?? "Sin nombre"
@@ -44,13 +59,28 @@ function toBranch(row: any): Branch {
   const addressParts = [calle, numExt, numInt, colonia].filter(Boolean)
   const address = row?.direccion ?? (addressParts.join(", ") || "")
 
-  const city =
+  // IDs que espera el backend
+  const cityId =
+    typeof row?.ciudad_id === "number" ? row?.ciudad_id
+    : typeof row?.city_id === "number" ? row?.city_id
+    : undefined
+
+  const stateId =
+    typeof row?.estate_id === "number" ? row?.estate_id
+    : typeof row?.estado_id === "number" ? row?.estado_id
+    : undefined
+
+  // Nombres (solo visual)
+  const cityName =
     row?.ciudad?.nombre ??
     row?.municipio ??
     row?.delegacion_municipio ??
-    String(row?.ciudad_id ?? "")
+    (typeof row?.ciudad === "string" ? row?.ciudad : "") ?? ""
 
-  const state = row?.estado?.nombre ?? String(row?.estado_id ?? "")
+  const stateName =
+    row?.estado?.nombre ??
+    row?.state?.nombre ??
+    "" // si no viene, quedará vacío
 
   const status: "active" | "inactive" =
     row?.estatus_actividad === false ? "inactive" : "active"
@@ -59,8 +89,10 @@ function toBranch(row: any): Branch {
     id,
     name: String(nombre),
     address,
-    city: String(city),
-    state: String(state),
+    cityName: String(cityName),
+    stateName: String(stateName),
+    cityId,
+    stateId,
     phone: String(row?.telefono ?? ""),
     email: String(row?.correo ?? ""),
     manager: String(row?.responsable ?? ""),
@@ -69,26 +101,23 @@ function toBranch(row: any): Branch {
   }
 }
 
-const initialForm = {
-  name: "",
-  address: "",
-  city: "",
-  state: "",
-  phone: "",
-  email: "",
-  manager: "",
-  status: "active" as "active" | "inactive",
-}
-
+/* ========= UI -> payload API (create/update) ========= */
 function toOfficePayload(form: typeof initialForm) {
+  // Convierte a número si viene como string
+  const cityIdNum = typeof form.cityId === "string" ? Number(form.cityId) : form.cityId
+  const stateIdNum = typeof form.stateId === "string" ? Number(form.stateId) : form.stateId
+
   return {
     nombre: form.name || undefined,
     telefono: form.phone || undefined,
     correo: form.email || undefined,
     responsable: form.manager || undefined,
     direccion: form.address || undefined,
-    ciudad: form.city || undefined, 
-    estado: form.state || undefined, 
+
+    // ⚠️ Backend espera IDs numéricos
+    ciudad_id: typeof cityIdNum === "number" && !Number.isNaN(cityIdNum) ? cityIdNum : undefined,
+    estate_id: typeof stateIdNum === "number" && !Number.isNaN(stateIdNum) ? stateIdNum : undefined, // usa estado_id si tu API lo requiere
+
     estatus_actividad: form.status === "active",
   }
 }
@@ -104,14 +133,14 @@ export function BranchManagement() {
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
   const [formData, setFormData] = useState(initialForm)
 
-  
+  /* ====== GET /offices ====== */
   async function fetchOffices() {
     setLoading(true)
     setError(null)
     setSuccess(null)
     try {
       const raw = await api("/offices")
-      const list: any[] = Array.isArray(raw) ? raw : raw?.data ?? raw?.result ?? []
+      const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.result ?? [])
       setBranches(list.map(toBranch))
     } catch (e: any) {
       setError(e?.message || "No se pudo obtener la lista de oficinas")
@@ -124,7 +153,7 @@ export function BranchManagement() {
     fetchOffices()
   }, [])
 
-  
+  /* ====== POST /offices ====== */
   async function createOffice() {
     setSubmitting(true)
     setError(null)
@@ -145,7 +174,8 @@ export function BranchManagement() {
       setSubmitting(false)
     }
   }
-// patch
+
+  /* ====== PATCH /offices/{id} ====== */
   async function updateOffice(id: string) {
     setSubmitting(true)
     setError(null)
@@ -166,11 +196,10 @@ export function BranchManagement() {
       setSubmitting(false)
     }
   }
-// delete
+
+  /* ====== DELETE /offices/{id} ====== */
   async function deleteOffice(id: string) {
-    const ok = typeof window !== "undefined"
-      ? window.confirm("¿Eliminar esta oficina?")
-      : true
+    const ok = typeof window !== "undefined" ? window.confirm("¿Eliminar esta oficina?") : true
     if (!ok) return
 
     setSubmitting(true)
@@ -187,6 +216,7 @@ export function BranchManagement() {
     }
   }
 
+  /* ====== UI handlers ====== */
   const handleAddBranch = () => {
     setEditingBranch(null)
     setFormData(initialForm)
@@ -200,8 +230,8 @@ export function BranchManagement() {
     setFormData({
       name: branch.name,
       address: branch.address,
-      city: branch.city,
-      state: branch.state,
+      cityId: branch.cityId ?? "",
+      stateId: branch.stateId ?? "",
       phone: branch.phone,
       email: branch.email,
       manager: branch.manager,
@@ -232,9 +262,7 @@ export function BranchManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Gestión de Sucursales</h2>
-          <p className="text-muted-foreground">
-            Administra las sucursales y oficinas del sistema.
-          </p>
+          <p className="text-muted-foreground">Administra las sucursales y oficinas del sistema.</p>
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
           {success && <p className="mt-2 text-sm text-green-600">{success}</p>}
         </div>
@@ -250,13 +278,11 @@ export function BranchManagement() {
                 Nueva Sucursal
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px]">
+            <DialogContent className="sm:max-w-[640px]">
               <DialogHeader>
                 <DialogTitle>{editingBranch ? "Editar Sucursal" : "Nueva Sucursal"}</DialogTitle>
                 <DialogDescription>
-                  {editingBranch
-                    ? "Modifica los datos de la sucursal"
-                    : "Completa la información para crear una nueva sucursal"}
+                  {editingBranch ? "Modifica los datos de la sucursal" : "Completa la información para crear una nueva sucursal"}
                 </DialogDescription>
               </DialogHeader>
 
@@ -294,21 +320,23 @@ export function BranchManagement() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="city">Ciudad</Label>
+                    <Label htmlFor="cityId">Ciudad (ID numérico)</Label>
                     <Input
-                      id="city"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      placeholder="Ciudad"
+                      id="cityId"
+                      type="number"
+                      value={formData.cityId}
+                      onChange={(e) => setFormData({ ...formData, cityId: e.target.value })}
+                      placeholder="Ej. 125"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="state">Estado</Label>
+                    <Label htmlFor="stateId">Estado (ID numérico)</Label>
                     <Input
-                      id="state"
-                      value={formData.state}
-                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                      placeholder="Estado"
+                      id="stateId"
+                      type="number"
+                      value={formData.stateId}
+                      onChange={(e) => setFormData({ ...formData, stateId: e.target.value })}
+                      placeholder="Ej. 20"
                     />
                   </div>
                 </div>
@@ -336,7 +364,7 @@ export function BranchManagement() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="status">Estado</Label>
+                  <Label htmlFor="status">Estado de actividad</Label>
                   <Select
                     value={formData.status}
                     onValueChange={(value: "active" | "inactive") =>
@@ -367,7 +395,7 @@ export function BranchManagement() {
         </div>
       </div>
 
-      {/* stats */}
+      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -394,7 +422,7 @@ export function BranchManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {useMemo(() => branches.reduce((s, b) => s + (Number.isFinite(b.employees) ? b.employees : 0), 0), [branches])}
+              {totalEmployees}
             </div>
           </CardContent>
         </Card>
@@ -429,7 +457,7 @@ export function BranchManagement() {
                     <TableCell>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <MapPin className="mr-1 h-3 w-3" />
-                        {branch.city}, {branch.state}
+                        {branch.cityName || branch.cityId || "—"}, {branch.stateName || branch.stateId || "—"}
                       </div>
                     </TableCell>
                     <TableCell>
