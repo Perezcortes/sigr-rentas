@@ -22,13 +22,13 @@ import { Building2, Plus, Edit, Trash2, MapPin, Phone, Mail, RefreshCw } from "l
 
 /* ===== Tipos ===== */
 interface Branch {
-  id: string            // hash devuelto por la API
+  id: string
   name: string
   address: string
-  cityName: string      // para mostrar
-  stateName: string     // para mostrar
-  cityId?: number       // para enviar a la API
-  stateId?: number      // para enviar a la API
+  cityName: string
+  stateName: string
+  cityId?: number
+  stateId?: number
   phone: string
   email: string
   manager: string
@@ -47,6 +47,9 @@ const initialForm = {
   status: "active" as "active" | "inactive",
 }
 
+type FormState = typeof initialForm
+type FormErrors = Partial<Record<keyof FormState, string>>
+
 /* ========= Normalizador API -> UI ========= */
 function toBranch(row: any): Branch {
   const id = String(row?.id ?? row?.uuid ?? crypto.randomUUID())
@@ -59,7 +62,6 @@ function toBranch(row: any): Branch {
   const addressParts = [calle, numExt, numInt, colonia].filter(Boolean)
   const address = row?.direccion ?? (addressParts.join(", ") || "")
 
-  // IDs que espera el backend
   const cityId =
     typeof row?.ciudad_id === "number" ? row?.ciudad_id
     : typeof row?.city_id === "number" ? row?.city_id
@@ -70,7 +72,6 @@ function toBranch(row: any): Branch {
     : typeof row?.estado_id === "number" ? row?.estado_id
     : undefined
 
-  // Nombres (solo visual)
   const cityName =
     row?.ciudad?.nombre ??
     row?.municipio ??
@@ -80,7 +81,7 @@ function toBranch(row: any): Branch {
   const stateName =
     row?.estado?.nombre ??
     row?.state?.nombre ??
-    "" // si no viene, quedará vacío
+    ""
 
   const status: "active" | "inactive" =
     row?.estatus_actividad === false ? "inactive" : "active"
@@ -101,25 +102,49 @@ function toBranch(row: any): Branch {
   }
 }
 
+/* ===== Helpers ===== */
+function safeNumber(v: string | number): number | undefined {
+  const n = typeof v === "string" ? Number(v) : v
+  return typeof n === "number" && Number.isFinite(n) ? n : undefined
+}
+
+function validateForm(f: FormState): FormErrors {
+  const errors: FormErrors = {}
+  if (!f.name || !f.name.trim()) errors.name = "El nombre es obligatorio"
+  if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) errors.email = "Email inválido"
+  return errors
+}
+
 /* ========= UI -> payload API (create/update) ========= */
-function toOfficePayload(form: typeof initialForm) {
-  // Convierte a número si viene como string
-  const cityIdNum = typeof form.cityId === "string" ? Number(form.cityId) : form.cityId
-  const stateIdNum = typeof form.stateId === "string" ? Number(form.stateId) : form.stateId
+function toOfficePayload(form: FormState) {
+  const nombre = form.name.trim()
+  if (!nombre) throw new Error("El nombre de la sucursal es obligatorio")
 
-  return {
-    nombre: form.name || undefined,
-    telefono: form.phone || undefined,
-    correo: form.email || undefined,
-    responsable: form.manager || undefined,
-    direccion: form.address || undefined,
-
-    // ⚠️ Backend espera IDs numéricos
-    ciudad_id: typeof cityIdNum === "number" && !Number.isNaN(cityIdNum) ? cityIdNum : undefined,
-    estate_id: typeof stateIdNum === "number" && !Number.isNaN(stateIdNum) ? stateIdNum : undefined, // usa estado_id si tu API lo requiere
-
+  const payload: any = {
+    nombre,
+    telefono: form.phone?.trim() || undefined,
+    correo: form.email?.trim() || undefined,
+    responsable: form.manager?.trim() || undefined,
+    direccion: form.address?.trim() || undefined,
+    ciudad_id: safeNumber(form.cityId),
+    estate_id: safeNumber(form.stateId),
     estatus_actividad: form.status === "active",
   }
+  // Si tu tabla exige 'clave' NOT NULL, puedes generar una por defecto:
+  // payload.clave = `${nombre.slice(0,3).toUpperCase()}-${Date.now()}`
+  return payload
+}
+
+/* ===== Querystring + debounce ===== */
+function buildQuery(params: Record<string, any>) {
+  const q = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null) return
+    if (typeof v === "string" && v.trim() === "") return
+    q.append(k, String(v))
+  })
+  const s = q.toString()
+  return s ? `?${s}` : ""
 }
 
 export function BranchManagement() {
@@ -131,15 +156,45 @@ export function BranchManagement() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
-  const [formData, setFormData] = useState(initialForm)
+  const [formData, setFormData] = useState<FormState>(initialForm)
+  const [formErrors, setFormErrors] = useState<FormErrors>({})
 
-  /* ====== GET /offices ====== */
-  async function fetchOffices() {
+  // Filtros
+  const [filters, setFilters] = useState<{
+    search: string
+    cityId?: string
+    estateId?: string
+    status?: "all" | "active" | "inactive"
+  }>({ search: "", cityId: "", estateId: "", status: "all" })
+
+  // Debounce del search
+  const [searchValue, setSearchValue] = useState("")
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters((f) => ({ ...f, search: searchValue }))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchValue])
+
+  /* ====== GET /offices (con filtros) ====== */
+  async function fetchOffices(opts?: { keepMessages?: boolean }) {
     setLoading(true)
-    setError(null)
-    setSuccess(null)
+    if (!opts?.keepMessages) { setError(null); setSuccess(null) }
+
     try {
-      const raw = await api("/offices")
+      const query = buildQuery({
+        search: filters.search || undefined,
+        cityId: filters.cityId ? Number(filters.cityId) : undefined,
+        estateId: filters.estateId ? Number(filters.estateId) : undefined,
+        estatus_actividad:
+          filters.status === "all"
+            ? undefined
+            : filters.status === "active"
+            ? true
+            : false,
+      })
+
+      const raw = await api(`/offices${query}`)
       const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.result ?? [])
       setBranches(list.map(toBranch))
     } catch (e: any) {
@@ -149,9 +204,17 @@ export function BranchManagement() {
     }
   }
 
+  // Carga inicial
   useEffect(() => {
     fetchOffices()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Refetch cuando cambian filtros
+  useEffect(() => {
+    fetchOffices({ keepMessages: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.cityId, filters.estateId, filters.status, filters.search])
 
   /* ====== POST /offices ====== */
   async function createOffice() {
@@ -167,6 +230,7 @@ export function BranchManagement() {
       })
       setSuccess("Oficina creada correctamente")
       setIsDialogOpen(false)
+      setFormData(initialForm)
       await fetchOffices()
     } catch (e: any) {
       setError(e?.message || "No se pudo crear la oficina")
@@ -189,6 +253,7 @@ export function BranchManagement() {
       })
       setSuccess("Oficina actualizada")
       setIsDialogOpen(false)
+      setFormData(initialForm)
       await fetchOffices()
     } catch (e: any) {
       setError(e?.message || "No se pudo actualizar la oficina")
@@ -217,9 +282,10 @@ export function BranchManagement() {
   }
 
   /* ====== UI handlers ====== */
-  const handleAddBranch = () => {
+  const openCreate = () => {
     setEditingBranch(null)
     setFormData(initialForm)
+    setFormErrors({})
     setIsDialogOpen(true)
     setError(null)
     setSuccess(null)
@@ -237,24 +303,27 @@ export function BranchManagement() {
       manager: branch.manager,
       status: branch.status,
     })
+    setFormErrors({})
     setIsDialogOpen(true)
     setError(null)
     setSuccess(null)
   }
 
   const handleSaveBranch = () => {
+    const errs = validateForm(formData)
+    setFormErrors(errs)
+    if (Object.keys(errs).length > 0) return
     if (editingBranch) updateOffice(editingBranch.id)
     else createOffice()
-  }
-
-  const handleDeleteBranch = (id: string) => {
-    deleteOffice(id)
   }
 
   const totalEmployees = useMemo(
     () => branches.reduce((sum, b) => sum + (Number.isFinite(b.employees) ? b.employees : 0), 0),
     [branches]
   )
+
+  const saving = submitting
+  const saveDisabled = saving || !formData.name.trim()
 
   return (
     <div className="space-y-6">
@@ -267,17 +336,19 @@ export function BranchManagement() {
           {success && <p className="mt-2 text-sm text-green-600">{success}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchOffices} disabled={loading || submitting}>
+          <Button variant="outline" onClick={() => fetchOffices()} disabled={loading || submitting}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Cargando..." : "Recargar"}
           </Button>
+
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={handleAddBranch} className="bg-primary hover:bg-primary/90" disabled={submitting}>
+              <Button onClick={openCreate} className="bg-primary hover:bg-primary/90" disabled={submitting}>
                 <Plus className="mr-2 h-4 w-4" />
                 Nueva Sucursal
               </Button>
             </DialogTrigger>
+
             <DialogContent className="sm:max-w-[640px]">
               <DialogHeader>
                 <DialogTitle>{editingBranch ? "Editar Sucursal" : "Nueva Sucursal"}</DialogTitle>
@@ -296,6 +367,7 @@ export function BranchManagement() {
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Nombre de la sucursal"
                     />
+                    {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="manager">Responsable / Gerente</Label>
@@ -360,6 +432,7 @@ export function BranchManagement() {
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="sucursal@empresa.com"
                     />
+                    {formErrors.email && <p className="text-xs text-destructive">{formErrors.email}</p>}
                   </div>
                 </div>
 
@@ -372,7 +445,7 @@ export function BranchManagement() {
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Selecciona estado" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="active">Activa</SelectItem>
@@ -383,17 +456,96 @@ export function BranchManagement() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
                   Cancelar
                 </Button>
-                <Button onClick={handleSaveBranch} className="bg-primary hover:bg-primary/90" disabled={submitting}>
-                  {submitting ? "Guardando..." : editingBranch ? "Guardar Cambios" : "Crear Sucursal"}
+                <Button onClick={handleSaveBranch} className="bg-primary hover:bg-primary/90" disabled={saveDisabled}>
+                  {saving ? "Guardando..." : editingBranch ? "Guardar Cambios" : "Crear Sucursal"}
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
+
+      {/* Filtros */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Filtros</CardTitle>
+          <CardDescription>Busca por nombre, responsable, clave o correo; y filtra por ciudad/estado/estatus.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-5">
+          {/* Search (debounced) */}
+          <div className="md:col-span-2 space-y-1">
+            <Label htmlFor="search">Búsqueda</Label>
+            <Input
+              id="search"
+              placeholder="oficina, responsable, clave o correo"
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="f-cityId">Ciudad (ID)</Label>
+            <Input
+              id="f-cityId"
+              type="number"
+              inputMode="numeric"
+              placeholder="1"
+              value={filters.cityId}
+              onChange={(e) => setFilters((f) => ({ ...f, cityId: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="f-estateId">Estado (ID)</Label>
+            <Input
+              id="f-estateId"
+              type="number"
+              inputMode="numeric"
+              placeholder="1"
+              value={filters.estateId}
+              onChange={(e) => setFilters((f) => ({ ...f, estateId: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="f-status">Estatus</Label>
+            <Select
+              value={filters.status}
+              onValueChange={(v: "all" | "active" | "inactive") =>
+                setFilters((f) => ({ ...f, status: v }))
+              }
+            >
+              <SelectTrigger id="f-status"><SelectValue placeholder="Todos" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="active">Activa</SelectItem>
+                <SelectItem value="inactive">Inactiva</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Acciones */}
+          <div className="md:col-span-5 flex gap-2">
+            <Button variant="outline" onClick={() => fetchOffices()} disabled={loading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Aplicar / Recargar
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSearchValue("")
+                setFilters({ search: "", cityId: "", estateId: "", status: "all" })
+              }}
+              disabled={loading}
+            >
+              Limpiar filtros
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -421,9 +573,7 @@ export function BranchManagement() {
             <Building2 className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {totalEmployees}
-            </div>
+            <div className="text-2xl font-bold">{totalEmployees}</div>
           </CardContent>
         </Card>
       </div>
@@ -487,7 +637,7 @@ export function BranchManagement() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteBranch(branch.id)}
+                          onClick={() => deleteOffice(branch.id)}
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />
