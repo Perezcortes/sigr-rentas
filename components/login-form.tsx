@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 
 import Logo from "@/public/sigr_images/LogoRentas.png"
+import LogoSingle from "@/public/sigr_images/LogoRentasSingle.png"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,13 +31,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 function normalize(s: string) {
   return s.trim()
 }
-
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
-
 function strongPassword(pw: string) {
-  // 8+, mayúscula, número y caracter especial
   return /^(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(pw)
 }
 
@@ -50,7 +48,6 @@ type MaybeHttpError = {
   }
 }
 
-/** Traduce distintos formatos de error a mensajes para el usuario */
 function parseAuthError(err: unknown): string {
   const e = err as MaybeHttpError
   const status =
@@ -203,7 +200,6 @@ export function LoginForm() {
       const data = await res.json().catch(() => ({}))
       setFpMsg(data?.message || "Si tu correo está en el sistema, te enviamos un enlace. Revisa inbox/spam.")
 
-      // ⬇️ Autocompletar token y cambiar a pestaña "restablecer" si el back lo devuelve (dev)
       if (data?.token) {
         setRpToken(data.token)
         setTab("restablecer")
@@ -247,11 +243,10 @@ export function LoginForm() {
       setRpMsg("Contraseña restablecida. Ahora puedes iniciar sesión.")
 
       // ✅ Cierra modal y enfoca el password del login
-      // Damos un pequeño tiempo para que el usuario vea el mensaje de éxito
       setTimeout(() => {
-        setOpenForgot(false)          // cierra modal -> el useEffect limpiará estados
+        setOpenForgot(false)
         setTimeout(() => {
-          passwordRef.current?.focus() // focus al campo password
+          passwordRef.current?.focus()
         }, 250)
       }, 800)
     } catch (err: any) {
@@ -339,7 +334,7 @@ export function LoginForm() {
                     className="bg-input border-border focus:border-tertiary focus:ring-ring placeholder:text-neutral-300 pr-10"
                     disabled={isLoading}
                     aria-invalid={Boolean(error)}
-                    ref={passwordRef}  // ✅ ref para focus tras reset
+                    ref={passwordRef}
                   />
                   <button
                     type="button"
@@ -396,107 +391,169 @@ export function LoginForm() {
                   </button>
                 </DialogTrigger>
 
-                <DialogContent className="sm:max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Recuperar / Restablecer contraseña</DialogTitle>
-                    <DialogDescription>
-                      Solicita el enlace por correo o usa tu token manualmente para pruebas locales.
-                    </DialogDescription>
+                {/* ======= MODAL con look de la captura ======= */}
+                <DialogContent className="sm:max-w-xl md:max-w-2xl p-0 overflow-hidden">
+                  {/* Cabecera invisible (para accesibilidad/close btn) */}
+                  <DialogHeader className="sr-only">
+                    <DialogTitle>Recupera tu cuenta</DialogTitle>
+                    <DialogDescription>Escribe tu correo y te enviaremos instrucciones</DialogDescription>
                   </DialogHeader>
 
-                  <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full">
-                    <TabsList className="grid grid-cols-2">
-                      <TabsTrigger value="solicitar">Solicitar enlace</TabsTrigger>
-                      <TabsTrigger value="restablecer">Restablecer (con token)</TabsTrigger>
-                    </TabsList>
+                  {/* Wrapper visual */}
+                  <div className="px-6 md:px-12 py-10">
+                    {/* Logo circular grande */}
+                    <div className="mx-auto -mt-2 mb-6 grid place-items-center">
+                        {/* Usa tu logo / isotipo aquí si prefieres */}
+                        <Image
+                          src={LogoSingle}
+                          alt="Logo"
+                          width={64}
+                          height={64}
+                          className="h-20 w-20 object-contain"
+                          priority
+                        />
+                    </div>
 
-                    <TabsContent value="solicitar" className="mt-4">
-                      <form onSubmit={submitForgot} className="space-y-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="fp_email">Correo</Label>
-                          <Input
-                            id="fp_email"
-                            type="email"
-                            placeholder="usuario@rentas.com"
-                            value={fpEmail}
-                            onChange={(e) => setFpEmail(e.target.value)}
-                            disabled={fpLoading}
-                          />
-                        </div>
-                        {fpErr && <p className="text-sm text-red-600">{fpErr}</p>}
-                        {fpMsg && <p className="text-sm text-muted-foreground">{fpMsg}</p>}
-                        <DialogFooter>
-                          <Button type="submit" disabled={fpLoading || !isValidEmail(fpEmail)}>
-                            {fpLoading ? "Enviando…" : "Enviar enlace"}
-                          </Button>
-                        </DialogFooter>
-                      </form>
-                    </TabsContent>
+                    {/* Título + copy al estilo de la captura */}
+                    <h2
+                      className="text-center text-3xl md:text-[20px] font-extrabold tracking-tight"
+                      style={{ color: "#161C3D" }} // navy
+                    >
+                      Recupera tu cuenta
+                    </h2>
+                    <p
+                      className="mt-3 text-center text-base md:text-[15px] leading-relaxed max-w-2xl mx-auto"
+                      style={{ color: "#31385B" }}
+                    >
+                      Escribe tu correo electrónico y recibirás las instrucciones para
+                      recuperar tu cuenta
+                    </p>
 
-                    <TabsContent value="restablecer" className="mt-4">
-                      <form onSubmit={submitReset} className="space-y-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="rp_token">Token (para pruebas)</Label>
-                          <Input
-                            id="rp_token"
-                            placeholder="Pega aquí el token"
-                            value={rpToken}
-                            onChange={(e) => setRpToken(e.target.value)}
-                            disabled={rpLoading}
-                          />
-                        </div>
+                    {/* Tabs siguen existiendo, pero mostramos primero 'solicitar' con el nuevo layout */}
+                    <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="mt-8">
+                      <TabsList className="mx-auto grid grid-cols-2 w-full max-w-md">
+                        <TabsTrigger value="solicitar">Solicitar enlace</TabsTrigger>
+                        <TabsTrigger value="restablecer">Restablecer (token)</TabsTrigger>
+                      </TabsList>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="rp_p1">Nueva contraseña</Label>
-                          <Input
-                            id="rp_p1"
-                            type="password"
-                            placeholder="••••••••"
-                            value={rpP1}
-                            onChange={(e) => setRpP1(e.target.value)}
-                            disabled={rpLoading}
-                          />
-                          <ul className="text-xs text-muted-foreground list-disc ml-4">
-                            <li>8+ caracteres</li>
-                            <li>1 mayúscula</li>
-                            <li>1 número</li>
-                            <li>1 caracter especial</li>
-                          </ul>
-                        </div>
+                      {/* --- Solicitar: input pill + CTA naranja grande --- */}
+                      <TabsContent value="solicitar" className="mt-6">
+                        <form onSubmit={submitForgot} className="space-y-4 max-w-2xl mx-auto">
+                          <div className="relative">
+                            <Input
+                              id="fp_email"
+                              type="email"
+                              placeholder="tu@correo.com"
+                              value={fpEmail}
+                              onChange={(e) => setFpEmail(e.target.value)}
+                              disabled={fpLoading}
+                              className="
+                                h-14 md:h-8 rounded-full
+                                border-2
+                                px-6 text-base md:text-base
+                                placeholder:text-slate-400
+                                focus-visible:ring-2
+                              "
+                              style={{
+                                // borde tipo navy
+                                borderColor: "#171B3A",
+                                boxShadow: "0 2px 0 rgba(0,0,0,0.02)",
+                              }}
+                            />
+                          </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="rp_p2">Confirmar contraseña</Label>
-                          <Input
-                            id="rp_p2"
-                            type="password"
-                            placeholder="••••••••"
-                            value={rpP2}
-                            onChange={(e) => setRpP2(e.target.value)}
-                            disabled={rpLoading}
-                          />
-                        </div>
+                          {fpErr && (
+                            <p className="text-sm text-red-600 text-center">{fpErr}</p>
+                          )}
+                          {fpMsg && (
+                            <p className="text-sm text-muted-foreground text-center">{fpMsg}</p>
+                          )}
 
-                        {rpErr && <p className="text-sm text-red-600">{rpErr}</p>}
-                        {rpMsg && <p className="text-sm text-green-600">{rpMsg}</p>}
+                          <div className="pt-2">
+                            <Button
+                              type="submit"
+                              disabled={fpLoading || !isValidEmail(fpEmail)}
+                              className="
+                                w-full h-14 md:h-16 text-lg md:text-xl font-bold rounded-2xl
+                                hover:brightness-95 transition
+                              "
+                              style={{
+                                backgroundColor: "#FF5A2C", // naranja del CTA
+                                color: "white",
+                              }}
+                            >
+                              {fpLoading ? "Enviando…" : "Reestablecer contraseña"}
+                            </Button>
+                          </div>
+                        </form>
+                      </TabsContent>
 
-                        <DialogFooter className="flex gap-2">
-                          <Button
-                            type="submit"
-                            disabled={
-                              rpLoading ||
-                              !rpToken ||
-                              !rpP1 ||
-                              !rpP2 ||
-                              rpP1 !== rpP2 ||
-                              !strongPassword(rpP1)
-                            }
-                          >
-                            {rpLoading ? "Guardando…" : "Restablecer"}
-                          </Button>
-                        </DialogFooter>
-                      </form>
-                    </TabsContent>
-                  </Tabs>
+                      {/* --- Restablecer (se mantiene tu layout funcional) --- */}
+                      <TabsContent value="restablecer" className="mt-6">
+                        <form onSubmit={submitReset} className="space-y-3 max-w-lg mx-auto">
+                          <div className="space-y-2">
+                            <Label htmlFor="rp_token">Token (para pruebas)</Label>
+                            <Input
+                              id="rp_token"
+                              placeholder="Pega aquí el token"
+                              value={rpToken}
+                              onChange={(e) => setRpToken(e.target.value)}
+                              disabled={rpLoading}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="rp_p1">Nueva contraseña</Label>
+                            <Input
+                              id="rp_p1"
+                              type="password"
+                              placeholder="••••••••"
+                              value={rpP1}
+                              onChange={(e) => setRpP1(e.target.value)}
+                              disabled={rpLoading}
+                            />
+                            <ul className="text-xs text-muted-foreground list-disc ml-4">
+                              <li>8+ caracteres</li>
+                              <li>1 mayúscula</li>
+                              <li>1 número</li>
+                              <li>1 caracter especial</li>
+                            </ul>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="rp_p2">Confirmar contraseña</Label>
+                            <Input
+                              id="rp_p2"
+                              type="password"
+                              placeholder="••••••••"
+                              value={rpP2}
+                              onChange={(e) => setRpP2(e.target.value)}
+                              disabled={rpLoading}
+                            />
+                          </div>
+
+                          {rpErr && <p className="text-sm text-red-600">{rpErr}</p>}
+                          {rpMsg && <p className="text-sm text-green-600">{rpMsg}</p>}
+
+                          <DialogFooter className="flex gap-2">
+                            <Button
+                              type="submit"
+                              disabled={
+                                rpLoading ||
+                                !rpToken ||
+                                !rpP1 ||
+                                !rpP2 ||
+                                rpP1 !== rpP2 ||
+                                !strongPassword(rpP1)
+                              }
+                            >
+                              {rpLoading ? "Guardando…" : "Restablecer"}
+                            </Button>
+                          </DialogFooter>
+                        </form>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
                 </DialogContent>
               </Dialog>
             </div>

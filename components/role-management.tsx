@@ -21,10 +21,14 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Shield, RefreshCw, Plus, Edit, Trash2 } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 import Hashids from "hashids"
 
-// ================= Hashids (auto–detector) =================
+const PH = "placeholder:text-muted-foreground/60"
+const CB = "border-secondary"
+
+// hashids
 const SALT  = process.env.NEXT_PUBLIC_HASHIDS_SALT ?? ""
 const P_SALT = process.env.NEXT_PUBLIC_HASHIDS_PERMISSIONS_SALT ?? SALT
 const MIN   = Number(process.env.NEXT_PUBLIC_HASHIDS_MIN_LENGTH ?? 0)
@@ -49,13 +53,12 @@ if (SALT) {
   const mins = Array.from(new Set([MIN, 0, 6, 8, 10]))
   for (const s of salts) for (const m of mins) CANDIDATES_BASE.push(makeCandidate(s, m, ALPH || undefined))
 }
-
 let ACTIVE_DECODER: Hashids | null = CANDIDATES_BASE.length ? CANDIDATES_BASE[0].inst : null
 let ACTIVE_DECODER_DESC = SALT ? `SALT=${SALT} MIN=${MIN}${ALPH ? " ALPH(custom)" : ""}` : "none"
 
 function decodeWith(h: Hashids | null, hid: string): number | null {
   if (!hid) return null
-  if (/^\d+$/.test(hid)) return Number(hid) // already numeric
+  if (/^\d+$/.test(hid)) return Number(hid)
   if (!h) return null
   const arr = h.decode(hid)
   if (Array.isArray(arr) && arr.length && typeof arr[0] === "number") return arr[0] as number
@@ -93,7 +96,6 @@ function ensureNumericPermissions(hids: string[]): number[] {
   return out
 }
 
-// ================= Tipos/normalizadores =================
 type RawRole = any
 interface RoleRow {
   id: string
@@ -102,8 +104,8 @@ interface RoleRow {
   permisosCount: number
 }
 interface PermissionItem {
-  hid: string        // hash (o string numérica)
-  nid: number | null // id numérico (decodificado)
+  hid: string       
+  nid: number | null 
   nombre: string
   descripcion?: string | null
 }
@@ -119,22 +121,11 @@ function toRoleRow(r: RawRole): RoleRow {
     : 0
   return { id, nombre: String(nombre), descripcion: String(descripcion), permisosCount }
 }
-function extractPermissionHids(perms: any): string[] {
-  if (!perms) return []
-  if (Array.isArray(perms)) {
-    return perms.map((p: any) =>
-      typeof p === "string" ? p :
-      typeof p === "number" ? String(p) :
-      String(p?.id ?? p?.permission_id ?? "")
-    ).filter(Boolean)
-  }
-  if (typeof perms === "object") return Object.keys(perms)
-  return []
-}
 
-// ================= Componente =================
+
 export function RoleManagement() {
   const { user } = useAuth()
+  const { toast } = useToast()
 
   const canView   = useMemo(() => hasPermLib(user, "gestionar_roles") || hasPermLib(user, "ver_permisos"), [user])
   const canCreate = useMemo(() => hasPermLib(user, "gestionar_roles"), [user])
@@ -144,32 +135,22 @@ export function RoleManagement() {
   const [roles, setRoles] = useState<RoleRow[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [authIssue, setAuthIssue] = useState<null | { code: 401 | 403; msg: string }>(null)
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RoleRow | null>(null)
 
   const [form, setForm] = useState({ nombre: "", descripcion: "" })
 
-  // ===== Permisos =====
+  // permisos
   const [permissions, setPermissions] = useState<PermissionItem[]>([])
-  const [byHid, setByHid] = useState<Map<string, PermissionItem>>(new Map())
   const [byNid, setByNid] = useState<Map<number, PermissionItem>>(new Map())
   const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set())
   const [permLoading, setPermLoading] = useState(false)
-  const [permError, setPermError] = useState<string | null>(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
   const [permQuery, setPermQuery] = useState("")
   const [decoderInfo, setDecoderInfo] = useState(ACTIVE_DECODER_DESC)
-
-  // Prefetch flag
   const [permsLoaded, setPermsLoaded] = useState(false)
-
   const selectedCount = selectedPerms.size
 
-  // Prefetch de permisos cuando se puede ver
   useEffect(() => {
     if (canView && !permsLoaded) {
       void fetchPermissions()
@@ -186,12 +167,11 @@ export function RoleManagement() {
   }
 
   async function fetchPermissions() {
-    setPermLoading(true); setPermError(null)
+    setPermLoading(true)
     try {
       const raw = await api("/permissions")
       const list: any[] = Array.isArray(raw) ? raw : raw?.data ?? raw?.result ?? []
 
-      // Preliminar
       const prelim = list.map((p) => {
         const hid = String(p?.id ?? p?.permission_id ?? p?.uuid ?? "")
         const nombre = String(p?.nombre ?? p?.name ?? p?.slug ?? "permiso")
@@ -199,14 +179,12 @@ export function RoleManagement() {
         return { hid, nombre, descripcion }
       }).filter(p => p.hid)
 
-      // Auto–descubre decoder con 1–2 muestras no numéricas
       const samples = prelim.map(x => x.hid).filter(id => !/^\d+$/.test(id)).slice(0, 2)
       for (const s of samples) {
         const probe = decodePermId(s)
         if (typeof probe === "number" && probe > 0) break
       }
 
-      // Mapea con nid ya calculado
       const mapped: PermissionItem[] = prelim.map(p => ({
         hid: p.hid,
         nid: decodePermId(p.hid),
@@ -216,22 +194,18 @@ export function RoleManagement() {
 
       setPermissions(mapped)
 
-      // índices
-      const _byHid = new Map<string, PermissionItem>()
       const _byNid = new Map<number, PermissionItem>()
       for (const it of mapped) {
-        _byHid.set(it.hid, it)
         if (typeof it.nid === "number") _byNid.set(it.nid, it)
       }
-      setByHid(_byHid); setByNid(_byNid)
+      setByNid(_byNid)
       setDecoderInfo(ACTIVE_DECODER_DESC)
       setPermsLoaded(true)
-
       if (typeof window !== "undefined") {
         console.info("[roles] Hashids decoder activo:", ACTIVE_DECODER_DESC)
       }
     } catch (e: any) {
-      setPermError(e?.message || "No se pudieron cargar los permisos")
+      toast({ title: "Error", description: e?.message || "No se pudieron cargar los permisos", variant: "destructive" })
     } finally {
       setPermLoading(false)
     }
@@ -239,23 +213,19 @@ export function RoleManagement() {
 
   async function fetchRoles() {
     if (!canView) {
-      setAuthIssue({ code: 403, msg: "No tienes el permiso requerido: gestionar_roles o ver_permisos." })
+      toast({ title: "Permisos insuficientes", description: "Requiere gestionar_roles o ver_permisos", variant: "destructive" })
       return
     }
-    setLoading(true); setError(null); setAuthIssue(null)
+    setLoading(true)
     try {
       const raw = await api("/roles")
       const list: any[] = Array.isArray(raw) ? raw : raw?.data ?? raw?.result ?? []
       setRoles(list.map(toRoleRow))
     } catch (e: any) {
-      const msg = String(e?.message || "")
-      if (/401/.test(msg)) setAuthIssue({ code: 401, msg: "Sesión expirada. Inicia sesión nuevamente." })
-      else if (/403/.test(msg) || /No tienes los permisos|Forbidden/i.test(msg))
-        setAuthIssue({ code: 403, msg: "No tienes el permiso requerido: gestionar_roles o ver_permisos." })
-      else setError(msg || "No se pudo cargar la lista de roles")
+      toast({ title: "Error", description: e?.message || "No se pudo cargar la lista de roles", variant: "destructive" })
     } finally { setLoading(false) }
   }
-  useEffect(() => { fetchRoles() }, [canView])
+  useEffect(() => { fetchRoles() }, [canView]) 
 
   const groupedPermissions = useMemo(() => {
     const q = permQuery.trim().toLowerCase()
@@ -277,7 +247,6 @@ export function RoleManagement() {
       .map(([k, arr]) => [k, arr.sort((a,b) => a.nombre.localeCompare(b.nombre))] as const)
   }, [permissions, permQuery])
 
-  // === Mejora 2: seleccionar todo/ninguno por grupo ===
   function setGroup(groupKey: string, checked: boolean) {
     setSelectedPerms((prev) => {
       const next = new Set(prev)
@@ -295,7 +264,7 @@ export function RoleManagement() {
   }
 
   async function createRole() {
-    setSubmitting(true); setError(null); setSuccess(null)
+    setSubmitting(true)
     try {
       const payload: any = {
         nombre: form.nombre,
@@ -303,16 +272,18 @@ export function RoleManagement() {
         permissions: buildPayloadPermissions(),
       }
       await api("/roles", { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "application/json" } })
-      setSuccess("Rol creado correctamente")
+      toast({ title: "Éxito", description: "Rol creado correctamente" })
       setIsDialogOpen(false)
+      setForm({ nombre: "", descripcion: "" })
+      setSelectedPerms(new Set())
       await fetchRoles()
     } catch (e: any) {
-      setError(e?.message || "No se pudo crear el rol")
+      toast({ title: "Error", description: e?.message || "No se pudo crear el rol", variant: "destructive" })
     } finally { setSubmitting(false) }
   }
 
   async function updateRole(id: string) {
-    setSubmitting(true); setError(null); setSuccess(null)
+    setSubmitting(true)
     try {
       const payload: any = {
         nombre: form.nombre,
@@ -324,11 +295,12 @@ export function RoleManagement() {
         body: JSON.stringify(payload),
         headers: { "Content-Type": "application/json" },
       })
-      setSuccess("Rol actualizado")
+      toast({ title: "Éxito", description: "Rol actualizado" })
       setIsDialogOpen(false)
+      setSelectedPerms(new Set())
       await fetchRoles()
     } catch (e: any) {
-      setError(e?.message || "No se pudo actualizar el rol")
+      toast({ title: "Error", description: e?.message || "No se pudo actualizar el rol", variant: "destructive" })
     } finally { setSubmitting(false) }
   }
 
@@ -336,13 +308,13 @@ export function RoleManagement() {
     if (!canDelete) return
     const ok = typeof window !== "undefined" ? window.confirm("¿Eliminar este rol? Esta acción es reversible (soft delete).") : true
     if (!ok) return
-    setSubmitting(true); setError(null); setSuccess(null)
+    setSubmitting(true)
     try {
       await api(`/roles/${encodeURIComponent(id)}`, { method: "DELETE" }, { expectJson: false })
-      setSuccess("Rol eliminado")
+      toast({ title: "Éxito", description: "Rol eliminado" })
       await fetchRoles()
     } catch (e: any) {
-      setError(e?.message || "No se pudo eliminar el rol")
+      toast({ title: "Error", description: e?.message || "No se pudo eliminar el rol", variant: "destructive" })
     } finally { setSubmitting(false) }
   }
 
@@ -352,22 +324,17 @@ export function RoleManagement() {
     setSelectedPerms(new Set())
     setPermQuery("")
     setIsDialogOpen(true)
-    setError(null)
-    setSuccess(null)
-    if (!permsLoaded) await fetchPermissions() // Mejora 3: prefetch
+    if (!permsLoaded) await fetchPermissions()
   }
 
   async function openEdit(r: RoleRow) {
     setEditing(r)
     setIsDialogOpen(true)
-    setError(null)
-    setSuccess(null)
     setForm({ nombre: r.nombre, descripcion: r.descripcion })
     setSelectedPerms(new Set())
     setPermQuery("")
-    if (!permsLoaded) await fetchPermissions() // Mejora 3: prefetch
+    if (!permsLoaded) await fetchPermissions()
     if (!canEdit) return
-    setLoadingDetail(true)
     try {
       const detail = await api(`/roles/${encodeURIComponent(r.id)}`)
       const nombre = detail?.nombre ?? detail?.name ?? r.nombre
@@ -377,7 +344,6 @@ export function RoleManagement() {
       const rawPerms = detail?.permisos ?? detail?.permissions ?? []
       const hids: string[] = []
       const items = Array.isArray(rawPerms) ? rawPerms : Object.keys(rawPerms ?? {})
-
       for (const it of items) {
         if (typeof it === "string") hids.push(it)
         else if (typeof it === "number") {
@@ -390,18 +356,31 @@ export function RoleManagement() {
         }
       }
       setSelectedPerms(new Set(hids.filter(Boolean)))
-    } catch { /* noop */ }
-    finally { setLoadingDetail(false) }
+    } catch (e: any) {
+      toast({ title: "Atención", description: "No se pudo precargar el detalle del rol.", variant: "default" })
+    }
   }
 
-  const save = () => { editing ? updateRole(editing.id) : createRole() }
+  const save = () => {
+    if (!form.nombre.trim()) {
+      toast({ title: "Validación", description: "El nombre del rol es obligatorio." })
+      return
+    }
+    editing ? updateRole(editing.id) : createRole()
+  }
+
+  // cards
+  const totalRoles = roles.length
+  const rolesSinPermisos = roles.filter(r => r.permisosCount === 0).length
+  const permisosTotales = roles.reduce((acc, r) => acc + (Number.isFinite(r.permisosCount) ? r.permisosCount : 0), 0)
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Gestión de Roles</h2>
-          <p className="text-muted-foreground">
+          {/* <p className="text-muted-foreground">
             Ver requiere <code>gestionar_roles</code> o <code>ver_permisos</code>. CRUD sólo con <code>gestionar_roles</code>.
           </p>
           {SALT ? (
@@ -410,10 +389,7 @@ export function RoleManagement() {
             <p className="mt-2 text-sm text-amber-600">
               Falta <code>NEXT_PUBLIC_HASHIDS_SALT</code>. No se podrán convertir permisos hasheados.
             </p>
-          )}
-          {authIssue && <p className={`mt-2 text-sm ${authIssue.code === 403 ? "text-amber-600" : "text-destructive"}`}>{authIssue.msg}</p>}
-          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-          {success && <p className="mt-2 text-sm text-green-600">{success}</p>}
+          )} */}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={fetchRoles} disabled={loading || submitting}>
@@ -427,7 +403,7 @@ export function RoleManagement() {
                 Nuevo Rol
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[820px]">
+            <DialogContent className="sm:max-w-[920px]">
               <DialogHeader>
                 <DialogTitle>{editing ? "Editar Rol" : "Nuevo Rol"}</DialogTitle>
                 <DialogDescription>
@@ -441,6 +417,7 @@ export function RoleManagement() {
                     <Label htmlFor="nombre">Nombre</Label>
                     <Input
                       id="nombre"
+                      className={PH}
                       value={form.nombre}
                       onChange={(e) => setForm({ ...form, nombre: e.target.value })}
                       placeholder="Administrador, Gerente…"
@@ -451,6 +428,7 @@ export function RoleManagement() {
                     <Label htmlFor="descripcion">Descripción</Label>
                     <Input
                       id="descripcion"
+                      className={PH}
                       value={form.descripcion}
                       onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
                       placeholder="Rol con privilegios…"
@@ -459,104 +437,80 @@ export function RoleManagement() {
                   </div>
                 </div>
 
-                {/* ======= Permisos (buscador + grupos + checkboxes) ======= */}
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="permQuery">Permisos</Label>
-                      {/* Mejora 1: contador */}
                       <span className="text-xs text-muted-foreground">{selectedCount} seleccionados</span>
                     </div>
                     <Input
                       id="permQuery"
+                      className={PH}
                       placeholder="Buscar permiso (ej. usuarios, crear, oficinas)…"
                       value={permQuery}
                       onChange={(e) => setPermQuery(e.target.value)}
-                      disabled={editing ? !canEdit : !canCreate}
                     />
                   </div>
 
-                  {permLoading ? (
-                    <p className="text-sm text-muted-foreground">Cargando permisos…</p>
-                  ) : permError ? (
-                    <p className="text-sm text-destructive">{permError}</p>
-                  ) : permissions.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay permisos disponibles.</p>
-                  ) : (
-                    <div className="max-h-80 overflow-auto rounded-md border p-2">
-                      {groupedPermissions.map(([group, items]) => {
-                        const disabledHeader = editing ? !canEdit : !canCreate
-                        return (
-                          <div key={group} className="mb-3">
-                            {/* Encabezado de grupo con “Todos / Ninguno” (Mejora 2) */}
-                            <div className="flex items-center justify-between text-xs font-semibold uppercase text-muted-foreground px-1 mb-1">
-                              <span>{group}</span>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  className="underline hover:opacity-80 disabled:opacity-50"
-                                  onClick={() => setGroup(group, true)}
-                                  disabled={disabledHeader}
-                                >
-                                  Todos
-                                </button>
-                                <span>·</span>
-                                <button
-                                  type="button"
-                                  className="underline hover:opacity-80 disabled:opacity-50"
-                                  onClick={() => setGroup(group, false)}
-                                  disabled={disabledHeader}
-                                >
-                                  Ninguno
-                                </button>
+                  <div className="h-[360px] overflow-auto rounded-md border p-3">
+                    {permLoading ? (
+                      <p className="text-sm text-muted-foreground">Cargando permisos…</p>
+                    ) : groupedPermissions.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Sin resultados</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {groupedPermissions.map(([groupKey, items]) => (
+                          <div key={groupKey} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Shield className="h-4 w-4 text-muted-foreground" />
+                                <h4 className="font-medium capitalize">{groupKey}</h4>
+                                <Badge variant="outline">{items.length}</Badge>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button type="button" size="sm" variant="outline" onClick={() => setGroup(groupKey, true)}>
+                                  Todo
+                                </Button>
+                                <Button type="button" size="sm" variant="ghost" onClick={() => setGroup(groupKey, false)}>
+                                  Desmarcar
+                                </Button>
                               </div>
                             </div>
 
-                            <ul className="space-y-2">
+                            <div className="grid grid-cols-1 gap-2">
                               {items.map((p) => {
                                 const checked = selectedPerms.has(p.hid)
-                                const disabled = editing ? !canEdit : !canCreate
                                 return (
-                                  <li key={p.hid} className="flex items-start gap-2">
+                                  <label
+                                    key={p.hid}
+                                    className={`flex items-center gap-2 rounded-md border p-2 ${CB} hover:bg-secondary/20`}
+                                  >
                                     <Checkbox
-                                      id={`perm-${p.hid}`}
                                       checked={checked}
-                                      onCheckedChange={(v) => togglePerm(p.hid, v)}
-                                      disabled={disabled}
+                                      onCheckedChange={(v) => togglePerm(p.hid, !!v)}
                                     />
-                                    <div className="leading-tight">
-                                      <Label htmlFor={`perm-${p.hid}`} className="cursor-pointer">
-                                        {p.nombre}{typeof p.nid === "number" ? ` (#${p.nid})` : ""}
-                                      </Label>
+                                    <div className="space-y-0.5">
+                                      <div className="text-sm font-medium">{p.nombre}</div>
                                       {p.descripcion && (
-                                        <p className="text-xs text-muted-foreground">{p.descripcion}</p>
+                                        <div className="text-xs text-muted-foreground">{p.descripcion}</div>
                                       )}
                                     </div>
-                                  </li>
+                                  </label>
                                 )
                               })}
-                            </ul>
+                            </div>
                           </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {loadingDetail && editing && (
-                    <p className="text-xs text-muted-foreground">Cargando permisos del rol…</p>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={save}
-                  className="bg-primary hover:bg-primary/90"
-                  disabled={submitting || !form.nombre || (editing ? !canEdit : !canCreate)}
-                >
-                  {submitting ? "Guardando..." : editing ? "Guardar Cambios" : "Crear Rol"}
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+                <Button onClick={save} disabled={submitting || (!canCreate && !canEdit)}>
+                  {submitting ? "Guardando..." : editing ? "Actualizar" : "Crear"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -564,89 +518,76 @@ export function RoleManagement() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* metricas */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Roles</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardDescription>Total de roles</CardDescription>
+            <CardTitle className="text-2xl">{totalRoles}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{roles.length}</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Roles con permisos</CardTitle>
-            <Shield className="h-4 w-4 text-primary" />
+          <CardHeader className="pb-2">
+            <CardDescription>Roles sin permisos</CardDescription>
+            <CardTitle className="text-2xl">{rolesSinPermisos}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{roles.filter(r => r.permisosCount > 0).length}</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Permisos totales (suma)</CardTitle>
-            <Shield className="h-4 w-4 text-blue-600" />
+          <CardHeader className="pb-2">
+            <CardDescription>Permisos asignados</CardDescription>
+            <CardTitle className="text-2xl">{permisosTotales}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{roles.reduce((a, r) => a + r.permisosCount, 0)}</div></CardContent>
         </Card>
       </div>
 
+      {/* tabla */}
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Roles</CardTitle>
-          <CardDescription>Visualiza y gestiona los roles existentes</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Roles
+          </CardTitle>
+          <CardDescription>Lista de roles y conteo de permisos asignados.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Cargando roles…</p>
-          ) : (
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rol</TableHead>
+                  <TableHead>Nombre</TableHead>
                   <TableHead>Descripción</TableHead>
-                  <TableHead>Permisos</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="w-[140px] text-right">Permisos</TableHead>
+                  <TableHead className="w-[220px] text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {roles.map((r) => (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} className="hover:bg-secondary/20">
                     <TableCell className="font-medium">{r.nombre}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{r.descripcion || "—"}</TableCell>
-                    <TableCell>
-                      {r.permisosCount > 0 ? (
-                        <Badge variant="outline">{r.permisosCount} permisos</Badge>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Sin permisos</span>
-                      )}
-                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.descripcion || "—"}</TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(r)} disabled={!canEdit}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => deleteRole(r.id)}
-                          className="text-destructive hover:text-destructive"
-                          disabled={!canDelete || submitting}
-                          title="Eliminar rol"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Badge variant="secondary">{r.permisosCount}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button variant="outline" size="sm" onClick={() => openEdit(r)} disabled={!canEdit}>
+                        <Edit className="h-4 w-4 mr-1" /> Editar
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => deleteRole(r.id)} disabled={!canDelete}>
+                        <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
-                {roles.length === 0 && !error && !authIssue && (
+                {roles.length === 0 && !loading && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                       No hay roles para mostrar.
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
-          )}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -19,16 +18,28 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Users, Plus, Edit, Trash2, Mail, Building2, Shield, RefreshCw } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Users, Plus, Edit, Trash2, RefreshCw, Building2, Mail, Shield } from "lucide-react"
 import type { UserRole } from "@/types/auth"
 import { getRoleDisplayName } from "@/lib/auth"
+import { useToast } from "@/components/ui/use-toast"
 import Hashids from "hashids"
 
-// =============== Config/API ===============
+const INPUT_FOCUS =
+  "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
+const SELECT_FOCUS =
+  "focus:ring-2 focus:ring-secondary focus:border-secondary"
+
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
 const BASE = RAW.replace(/\/+$/, "")
 
-// =============== Roles ===============
 const ROLE_ID_BY_ROLE: Record<UserRole, number> = {
   administrador: 1,
   gerente: 2,
@@ -41,7 +52,6 @@ const ROLE_BY_ID: Record<number, UserRole> = Object.fromEntries(
   Object.entries(ROLE_ID_BY_ROLE).map(([k, v]) => [v, k as UserRole])
 ) as Record<number, UserRole>
 
-// =============== Tipos ===============
 interface SystemUser {
   id: string
   name: string
@@ -62,7 +72,7 @@ type Office = {
   activo?: boolean
 }
 
-// =============== Hashids AUTODECODER (Oficinas) ===============
+// hashids
 const SALT  = process.env.NEXT_PUBLIC_HASHIDS_SALT ?? ""
 const O_SALT = process.env.NEXT_PUBLIC_HASHIDS_OFFICES_SALT ?? SALT
 const MIN   = Number(process.env.NEXT_PUBLIC_HASHIDS_MIN_LENGTH ?? 0)
@@ -72,8 +82,6 @@ type HashidsCandidate = { salt: string; min: number; alph?: string; inst: Hashid
 function makeCandidate(salt: string, min: number, alph?: string): HashidsCandidate {
   return { salt, min, alph, inst: new Hashids(salt, min, alph) }
 }
-
-// Generamos una lista de candidatos razonables
 const CANDIDATES_BASE: HashidsCandidate[] = []
 if (O_SALT || SALT) {
   const salts = Array.from(
@@ -91,17 +99,15 @@ if (O_SALT || SALT) {
   const mins = Array.from(new Set([MIN, 0, 6, 8, 10]))
   for (const s of salts) for (const m of mins) CANDIDATES_BASE.push(makeCandidate(s, m, ALPH || undefined))
 }
-
 let ACTIVE_DECODER: Hashids | null = CANDIDATES_BASE.length ? CANDIDATES_BASE[0].inst : null
 let ACTIVE_DECODER_DESC = O_SALT || SALT ? `SALT=${O_SALT || SALT} MIN=${MIN}${ALPH ? " ALPH(custom)" : ""}` : "none"
 
 function isNumericString(s: string) {
   return /^\d+$/.test(s)
 }
-
 function decodeWith(h: Hashids | null, hid: string): number | null {
   if (!hid) return null
-  if (isNumericString(hid)) return Number(hid) // ya numérica
+  if (isNumericString(hid)) return Number(hid)
   if (!h) return null
   const arr = h.decode(hid)
   if (Array.isArray(arr) && arr.length && typeof arr[0] === "number") return arr[0] as number
@@ -112,7 +118,6 @@ function decodeWith(h: Hashids | null, hid: string): number | null {
   }
   return null
 }
-
 function tryDecodeWithCandidates(hid: string, candidates: HashidsCandidate[]): number | null {
   for (const c of candidates) {
     const n = decodeWith(c.inst, hid)
@@ -124,7 +129,6 @@ function tryDecodeWithCandidates(hid: string, candidates: HashidsCandidate[]): n
   }
   return null
 }
-
 function decodeOfficeId(hidOrNum: OfficeId): number | null {
   if (typeof hidOrNum === "number") return hidOrNum
   const s = String(hidOrNum)
@@ -133,7 +137,29 @@ function decodeOfficeId(hidOrNum: OfficeId): number | null {
   if (typeof nA === "number") return nA
   return tryDecodeWithCandidates(s, CANDIDATES_BASE)
 }
-
+function isOfficeSelected(selected: OfficeId[], candidate: OfficeId) {
+  if (selected.includes(candidate)) return true
+  const candNum = decodeOfficeId(candidate)
+  if (typeof candNum !== "number") return false
+  return selected.some((s) => {
+    if (s === candidate) return true
+    const sn = decodeOfficeId(s)
+    return typeof sn === "number" && sn === candNum
+  })
+}
+function mergeOfficeIds(prev: OfficeId[], id: OfficeId, add: boolean): OfficeId[] {
+  if (add) {
+    if (isOfficeSelected(prev, id)) return prev
+    return [...prev, id]
+  } else {
+    const remNum = decodeOfficeId(id)
+    return prev.filter((x) => {
+      if (x === id) return false
+      const xn = decodeOfficeId(x)
+      return !(typeof remNum === "number" && typeof xn === "number" && remNum === xn)
+    })
+  }
+}
 function ensureNumericOfficeIds(ids: OfficeId[]): number[] {
   const out: number[] = []
   for (const v of ids) {
@@ -144,7 +170,6 @@ function ensureNumericOfficeIds(ids: OfficeId[]): number[] {
   return out
 }
 
-// =============== Normalizadores ===============
 function normalizeRoleToUserRole(value: any): UserRole {
   const raw =
     typeof value === "object" && value
@@ -179,7 +204,6 @@ function toSystemUser(u: any): SystemUser {
     "Sin nombre"
 
   const email = u?.correo ?? u?.email ?? ""
-
   let role: UserRole = normalizeRoleToUserRole(u?.role ?? u?.rol)
   if (!role && typeof u?.role_id === "number") role = ROLE_BY_ID[u.role_id] ?? "agente"
 
@@ -229,19 +253,6 @@ function toSystemUser(u: any): SystemUser {
   }
 }
 
-// =============== UI Aux ===============
-const availablePermissions = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "reportes", label: "Reportes" },
-  { id: "admin", label: "Administración" },
-  { id: "centro_pagos", label: "Centro de Pagos" },
-  { id: "interesados", label: "Interesados" },
-  { id: "mis_rentas", label: "Mis Rentas" },
-  { id: "renovaciones", label: "Renovaciones" },
-  { id: "administraciones", label: "Administraciones" },
-  { id: "usuarios", label: "Usuarios" },
-]
-
 function genTempPassword() {
   const letters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
   const digits = "23456789"
@@ -252,23 +263,21 @@ function genTempPassword() {
   return out
 }
 
-// =============== Componente ===============
 export function UserManagement() {
   const [users, setUsers] = useState<SystemUser[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null)
 
-  // Oficinas
   const [offices, setOffices] = useState<Office[]>([])
   const [officesLoading, setOfficesLoading] = useState(false)
   const [officeSearch, setOfficeSearch] = useState("")
   const [selectedOfficeIds, setSelectedOfficeIds] = useState<OfficeId[]>([])
   const [decoderInfo, setDecoderInfo] = useState(ACTIVE_DECODER_DESC)
+
+  const { toast } = useToast()
 
   const filteredOffices = useMemo(() => {
     const q = officeSearch.trim().toLowerCase()
@@ -288,17 +297,15 @@ export function UserManagement() {
     role: "agente" as UserRole,
     isActive: true,
     password: genTempPassword(),
-    permissions: [] as string[],
   })
 
   function getToken() {
     return typeof window !== "undefined" ? localStorage.getItem("access_token") : null
   }
 
-  // === Usuarios ===
+  // usuarios
   async function fetchUsersFromApi() {
     setLoading(true)
-    setError(null)
     try {
       const token = getToken()
       const res = await fetch(`${BASE}/users`, {
@@ -313,13 +320,13 @@ export function UserManagement() {
       const list: any[] = Array.isArray(raw) ? raw : raw?.data ?? raw?.result ?? []
       setUsers(list.map(toSystemUser))
     } catch (e: any) {
-      setError(e?.message || "No se pudo cargar la lista de usuarios")
+      toast({ title: "Error", description: e?.message || "No se pudo cargar la lista de usuarios", variant: "destructive" })
     } finally {
       setLoading(false)
     }
   }
 
-  // === Oficinas ===
+  // oficinas
   async function fetchOfficesFromApi() {
     setOfficesLoading(true)
     try {
@@ -344,7 +351,6 @@ export function UserManagement() {
 
       const list: any[] = Array.isArray(data) ? data : data?.data ?? data?.result ?? []
 
-      // Mapeo preliminar
       const mapped: Office[] = list.map((o) => ({
         id: (o?.id ?? o?.office_id) as OfficeId,
         nombre: String(o?.nombre ?? o?.name ?? o?.clave ?? "Oficina"),
@@ -354,7 +360,6 @@ export function UserManagement() {
         activo: typeof o?.activo === "boolean" ? o.activo : undefined,
       }))
 
-      // Auto–descubre decoder con 1–2 muestras no numéricas
       const samples = mapped.map(x => x.id).filter(id => typeof id === "string" && !isNumericString(String(id))) as string[]
       for (const s of samples.slice(0, 2)) {
         const probe = decodeOfficeId(s)
@@ -363,8 +368,8 @@ export function UserManagement() {
       setDecoderInfo(ACTIVE_DECODER_DESC)
 
       setOffices(mapped)
-    } catch (e) {
-      console.error(e)
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "No se pudieron cargar las oficinas", variant: "destructive" })
       setOffices([])
     } finally {
       setOfficesLoading(false)
@@ -379,22 +384,15 @@ export function UserManagement() {
     if (isDialogOpen && offices.length === 0 && !officesLoading) {
       fetchOfficesFromApi()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDialogOpen])
 
-  // === Crear usuario ===
+  // crud
   async function createUser() {
     setSubmitting(true)
-    setError(null)
-    setSuccess(null)
     try {
       const token = getToken()
       const role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
-
-      // 🔹 Convertir TODOS los ids de oficina a enteros antes de enviar
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
-      const officesPayload = numericOfficeIds.map((id) => ({ id }))
-
       const payload: any = {
         nombres: formData.nombres,
         primer_apellido: formData.primer_apellido,
@@ -404,42 +402,29 @@ export function UserManagement() {
         role_id,
         telefono: formData.telefono || undefined,
         whatsapp: formData.whatsapp || undefined,
-        offices: officesPayload,
+        offices: numericOfficeIds.map((id) => ({ id })),
         is_active: formData.isActive,
       }
-
       const res = await fetch(`${BASE}/users`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error((await res.text()) || `Error ${res.status}`)
-
-      setSuccess("Usuario creado correctamente")
+      toast({ title: "Éxito", description: "Usuario creado correctamente" })
       setIsDialogOpen(false)
       await fetchUsersFromApi()
     } catch (e: any) {
-      setError(e?.message || "No se pudo crear el usuario")
-    } finally {
-      setSubmitting(false)
-    }
+      toast({ title: "Error", description: e?.message || "No se pudo crear el usuario", variant: "destructive" })
+    } finally { setSubmitting(false) }
   }
 
-  // === Actualizar usuario ===
   async function updateUser(userId: string) {
     setSubmitting(true)
-    setError(null)
-    setSuccess(null)
     try {
       const token = getToken()
       const role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
-
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
-      const officesPayload = numericOfficeIds.map((id) => ({ id }))
-
       const payload: any = {
         nombres: formData.nombres,
         primer_apellido: formData.primer_apellido,
@@ -448,31 +433,22 @@ export function UserManagement() {
         role_id,
         telefono: formData.telefono || undefined,
         whatsapp: formData.whatsapp || undefined,
-        offices: officesPayload,
+        offices: numericOfficeIds.map((id) => ({ id })),
         is_active: formData.isActive,
       }
-      if (formData.password && formData.password.trim().length > 0) {
-        payload.password = formData.password.trim()
-      }
-
+      if (formData.password?.trim()) payload.password = formData.password.trim()
       const res = await fetch(`${BASE}/users/${encodeURIComponent(userId)}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error((await res.text()) || `Error ${res.status}`)
-
-      setSuccess("Usuario actualizado")
+      toast({ title: "Éxito", description: "Usuario actualizado" })
       setIsDialogOpen(false)
       await fetchUsersFromApi()
     } catch (e: any) {
-      setError(e?.message || "No se pudo actualizar el usuario")
-    } finally {
-      setSubmitting(false)
-    }
+      toast({ title: "Error", description: e?.message || "No se pudo actualizar el usuario", variant: "destructive" })
+    } finally { setSubmitting(false) }
   }
 
   const handleAddUser = () => {
@@ -487,16 +463,13 @@ export function UserManagement() {
       role: "agente",
       isActive: true,
       password: genTempPassword(),
-      permissions: [],
     })
     setSelectedOfficeIds([])
     setOfficeSearch("")
     setIsDialogOpen(true)
-    setSuccess(null)
-    setError(null)
   }
 
-  const handleEditUser = (user: SystemUser) => {
+  const handleEditUser = async (user: SystemUser) => {
     const parts = user.name.trim().split(/\s+/)
     let nombres = "", primer_apellido = "", segundo_apellido = ""
     if (parts.length >= 3) { segundo_apellido = parts.pop() as string; primer_apellido = parts.pop() as string; nombres = parts.join(" ") }
@@ -506,32 +479,54 @@ export function UserManagement() {
     setEditingUser(user)
     setFormData({
       nombres, primer_apellido, segundo_apellido,
-      correo: user.email,
-      telefono: "",
-      whatsapp: "",
-      role: user.role,
-      isActive: user.isActive,
-      password: "",
-      permissions: user.permissions ?? [],
+      correo: user.email, telefono: "", whatsapp: "",
+      role: user.role, isActive: user.isActive, password: "",
     })
-    setSelectedOfficeIds([]) // si tu /users/{id} trae ids, precárgalos aquí
-    setOfficeSearch("")
-    setIsDialogOpen(true)
-    setSuccess(null)
-    setError(null)
+    setSelectedOfficeIds([]); setOfficeSearch(""); setIsDialogOpen(true)
+
+    if (offices.length === 0 && !officesLoading) await fetchOfficesFromApi()
+
+    try {
+      const token = getToken()
+      const res = await fetch(`${BASE}/users/${encodeURIComponent(user.id)}`, {
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        cache: "no-store",
+      })
+      if (res.ok) {
+        const u = await res.json()
+        const rawOffices = u?.offices ?? u?.oficinas ?? []
+        const ids: OfficeId[] = Array.isArray(rawOffices)
+          ? rawOffices.map((o: any) => (typeof o === "object" ? (o.id ?? o.office_id ?? null) : o)).filter(Boolean)
+          : []
+        setSelectedOfficeIds((prev) => {
+          let curr = prev.slice()
+          ids.forEach((id) => { curr = mergeOfficeIds(curr, id, true) })
+          return curr
+        })
+        const roleFromDetail: UserRole | null =
+          typeof u?.role_id === "number" ? (ROLE_BY_ID[u.role_id] ?? null) : normalizeRoleToUserRole(u?.role ?? u?.rol)
+        setFormData((fd) => ({ ...fd, role: roleFromDetail || fd.role }))
+      } else {
+        const msg = await res.text()
+        throw new Error(msg || `Error ${res.status}`)
+      }
+    } catch (e: any) {
+      toast({ title: "Atención", description: "No se pudo precargar detalle de oficinas/rol.", variant: "default" })
+    }
   }
 
   const handleSaveUser = () => {
-    if (editingUser) updateUser(editingUser.id)
-    else createUser()
+    if (!formData.nombres.trim() || !formData.correo.trim()) {
+      toast({ title: "Validación", description: "Nombre y correo son obligatorios." })
+      return
+    }
+    editingUser ? updateUser(editingUser.id) : createUser()
   }
 
   const handleDeleteUser = async (id: string) => {
     const confirmar = typeof window !== "undefined" ? window.confirm("¿Eliminar este usuario? (soft delete)") : true
     if (!confirmar) return
     setSubmitting(true)
-    setError(null)
-    setSuccess(null)
     try {
       const token = getToken()
       const res = await fetch(`${BASE}/users/${encodeURIComponent(id)}`, {
@@ -539,30 +534,56 @@ export function UserManagement() {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       })
       if (res.status === 204) {
-        setSuccess("Usuario eliminado")
+        toast({ title: "Éxito", description: "Usuario eliminado" })
         await fetchUsersFromApi()
         return
       }
       if (!res.ok) throw new Error((await res.text()) || `Error ${res.status}`)
-      setSuccess("Usuario eliminado")
+      toast({ title: "Éxito", description: "Usuario eliminado" })
       await fetchUsersFromApi()
     } catch (e: any) {
-      setError(e?.message || "No se pudo eliminar el usuario")
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handlePermissionChange = (permissionId: string, checked: boolean) => {
-    if (checked) setFormData({ ...formData, permissions: [...formData.permissions, permissionId] })
-    else setFormData({ ...formData, permissions: formData.permissions.filter((p) => p !== permissionId) })
+      toast({ title: "Error", description: e?.message || "No se pudo eliminar el usuario", variant: "destructive" })
+    } finally { setSubmitting(false) }
   }
 
   const toggleOffice = (id: OfficeId, checked: boolean) => {
-    setSelectedOfficeIds((prev) =>
-      checked ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id)
-    )
+    setSelectedOfficeIds((prev) => mergeOfficeIds(prev, id, checked))
   }
+
+  const toggleAllFiltered = (check: boolean) => {
+    setSelectedOfficeIds((prev) => {
+      let acc = prev
+      for (const o of filteredOffices) acc = mergeOfficeIds(acc, o.id, check)
+      return acc
+    })
+  }
+  const clearAllOffices = () => setSelectedOfficeIds([])
+
+  const OfficeChip = ({ o }: { o: Office }) => (
+    <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+      {o.nombre}
+      <button
+        type="button"
+        className="ml-1 text-muted-foreground hover:text-foreground"
+        onClick={() => setSelectedOfficeIds((prev) => mergeOfficeIds(prev, o.id, false))}
+        aria-label={`Quitar ${o.nombre}`}
+      >
+        ×
+      </button>
+    </span>
+  )
+
+  // ===== Métricas (cards) =====
+  const totalUsers = users.length
+  const activos = users.filter(u => u.isActive).length
+  const inactivos = totalUsers - activos
+  const recientes7d = users.filter(u => {
+    if (!u.lastLogin || u.lastLogin === "Nunca") return false
+    const d = new Date(u.lastLogin)
+    if (isNaN(d.getTime())) return false
+    const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    return d >= sevenDaysAgo
+  }).length
 
   return (
     <div className="space-y-6">
@@ -571,15 +592,7 @@ export function UserManagement() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Gestión de Usuarios</h2>
           <p className="text-muted-foreground">Administra los usuarios y sus permisos en el sistema</p>
-          {O_SALT || SALT ? (
-            <p className="mt-2 text-xs text-muted-foreground">Decoder oficinas: {decoderInfo}</p>
-          ) : (
-            <p className="mt-2 text-sm text-amber-600">
-              Falta <code>NEXT_PUBLIC_HASHIDS_SALT</code>. No se podrán convertir IDs de oficinas hasheadas.
-            </p>
-          )}
-          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-          {success && <p className="mt-2 text-sm text-green-600">{success}</p>}
+          {/* <p className="mt-2 text-xs text-muted-foreground">Decoder oficinas: {decoderInfo}</p> */}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={fetchUsersFromApi} disabled={loading || submitting}>
@@ -597,143 +610,217 @@ export function UserManagement() {
               <DialogHeader>
                 <DialogTitle>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</DialogTitle>
                 <DialogDescription>
-                  {editingUser ? "Modifica los datos y permisos del usuario" : "Completa la información para crear un nuevo usuario"}
+                  {editingUser ? "Modifica los datos y oficinas del usuario" : "Completa la información para crear un nuevo usuario"}
                 </DialogDescription>
               </DialogHeader>
 
+
               <div className="grid gap-4 py-4">
+                {/* nombre */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="nombres">Nombres</Label>
-                    <Input id="nombres" value={formData.nombres} onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} placeholder="Juan Carlos" />
+                    <Input id="nombres" className={INPUT_FOCUS} value={formData.nombres}
+                      onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} placeholder="Juan Carlos" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="primer_apellido">Primer apellido</Label>
-                    <Input id="primer_apellido" value={formData.primer_apellido} onChange={(e) => setFormData({ ...formData, primer_apellido: e.target.value })} placeholder="Pérez" />
+                    <Input id="primer_apellido" className={INPUT_FOCUS} value={formData.primer_apellido}
+                      onChange={(e) => setFormData({ ...formData, primer_apellido: e.target.value })} placeholder="Pérez" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="segundo_apellido">Segundo apellido</Label>
-                    <Input id="segundo_apellido" value={formData.segundo_apellido} onChange={(e) => setFormData({ ...formData, segundo_apellido: e.target.value })} placeholder="García" />
+                    <Input id="segundo_apellido" className={INPUT_FOCUS} value={formData.segundo_apellido}
+                      onChange={(e) => setFormData({ ...formData, segundo_apellido: e.target.value })} placeholder="García" />
                   </div>
                 </div>
 
-                {/* Contacto */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="correo">Correo</Label>
-                    <Input id="correo" type="email" value={formData.correo} onChange={(e) => setFormData({ ...formData, correo: e.target.value })} placeholder="usuario@sigr.com" />
+                    <Input id="correo" type="email" className={INPUT_FOCUS} value={formData.correo}
+                      onChange={(e) => setFormData({ ...formData, correo: e.target.value })} placeholder="usuario@sigr.com" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="telefono">Teléfono</Label>
-                    <Input id="telefono" value={formData.telefono} onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} placeholder="9512345678" />
+                    <Input id="telefono" className={INPUT_FOCUS} value={formData.telefono}
+                      onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} placeholder="9512345678" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="whatsapp">WhatsApp</Label>
-                    <Input id="whatsapp" value={formData.whatsapp} onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })} placeholder="9512345678" />
+                    <Input id="whatsapp" className={INPUT_FOCUS} value={formData.whatsapp}
+                      onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })} placeholder="9512345678" />
                   </div>
                 </div>
 
-                {/* Rol + Estado */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* rol */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="role">Rol</Label>
-                    <Select value={formData.role} onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Select value={formData.role} onValueChange={(v: UserRole) => setFormData({ ...formData, role: v })}>
+                      <SelectTrigger className={SELECT_FOCUS}>
+                        <SelectValue placeholder="Selecciona un rol" />
+                      </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="administrador">Administrador</SelectItem>
-                        <SelectItem value="gerente">Gerente</SelectItem>
-                        <SelectItem value="coordinador">Coordinador</SelectItem>
-                        <SelectItem value="agente">Agente</SelectItem>
-                        <SelectItem value="propietario">Propietario</SelectItem>
-                        <SelectItem value="inquilino">Inquilino</SelectItem>
+                        {Object.keys(ROLE_ID_BY_ROLE).map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {getRoleDisplayName(r as UserRole)}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-center gap-3 mt-7">
-                    <Switch id="isActive" checked={formData.isActive} onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })} />
-                    <Label htmlFor="isActive">Usuario Activo</Label>
-                  </div>
-                </div>
 
-                {/* Oficinas */}
-                <div className="space-y-2">
-                  <Label>Oficinas</Label>
-                  <div className="rounded-lg border p-3">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <Input placeholder="Buscar por nombre/clave/ciudad/estado…" value={officeSearch} onChange={(e) => setOfficeSearch(e.target.value)} />
-                      <Button type="button" variant="outline" size="sm" onClick={fetchOfficesFromApi} disabled={officesLoading}>
-                        {officesLoading ? "Cargando…" : "Recargar"}
-                      </Button>
-                    </div>
-                    {officesLoading ? (
-                      <p className="text-sm text-muted-foreground">Cargando oficinas…</p>
-                    ) : offices.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No se encontraron oficinas.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-auto pr-1">
-                        {filteredOffices.map((o) => {
-                          const checked = selectedOfficeIds.includes(o.id)
-                          return (
-                            <label key={String(o.id)} className="flex items-center gap-2 rounded-md border p-2 hover:bg-muted cursor-pointer">
-                              <Checkbox checked={checked} onCheckedChange={(v) => toggleOffice(o.id, v as boolean)} />
-                              <span className="text-sm">
-                                <span className="font-medium">{o.nombre}</span>
-                                {o.clave ? <span className="text-muted-foreground"> · {o.clave}</span> : null}
-                                {(o.ciudad || o.estado) ? (
-                                  <span className="text-muted-foreground"> · {o.ciudad ?? ""}{o.ciudad && o.estado ? ", " : ""}{o.estado ?? ""}</span>
-                                ) : null}
-                              </span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    )}
-                    <div className="mt-3 text-xs text-muted-foreground">
-                      Seleccionadas: {selectedOfficeIds.length > 0 ? selectedOfficeIds.map(String).join(", ") : "ninguna"}
+                  <div className="space-y-2">
+                    <Label htmlFor="isActive">Activo</Label>
+                    <div className="h-10 flex items-center">
+                      <Switch
+                        id="isActive"
+                        checked={formData.isActive}
+                        onCheckedChange={(v) => setFormData({ ...formData, isActive: !!v })}
+                      />
                     </div>
                   </div>
-                </div>
 
-                {/* Contraseña */}
-                <div className="space-y-2">
-                  <Label htmlFor="password">{editingUser ? "Nueva contraseña (opcional)" : "Contraseña temporal"}</Label>
-                  <div className="flex gap-2">
-                    <Input id="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder={editingUser ? "Dejar vacío para no cambiar" : ""} />
-                    {!editingUser && (
-                      <Button type="button" variant="outline" onClick={() => setFormData({ ...formData, password: genTempPassword() })}>
-                        Generar
-                      </Button>
-                    )}
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password (temporal)</Label>
+                    <Input
+                      id="password"
+                      className={INPUT_FOCUS}
+                      type="text"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Se generó automáticamente"
+                    />
                   </div>
-                  {!editingUser && <p className="text-xs text-muted-foreground">Se enviará como contraseña inicial; el usuario podrá cambiarla después.</p>}
                 </div>
 
-                {/* Permisos (solo UI) */}
+                {/* oficinas - dropdown */}
                 <div className="space-y-3">
-                  <Label>Permisos (opcional, UI)</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {availablePermissions.map((permission) => (
-                      <div key={permission.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={permission.id}
-                          checked={formData.permissions.includes(permission.id)}
-                          onCheckedChange={(checked) => handlePermissionChange(permission.id, checked as boolean)}
-                        />
-                        <Label htmlFor={permission.id} className="text-sm">
-                          {permission.label}
-                        </Label>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                      <Label>Oficinas</Label>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">*Actualmente el endpoint no recibe permisos; se muestran solo como referencia en la UI.</p>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" className="w-full justify-between">
+                        <span className="truncate">
+                          {selectedOfficeIds.length > 0
+                            ? `${selectedOfficeIds.length} oficina${selectedOfficeIds.length > 1 ? "s" : ""} seleccionada${selectedOfficeIds.length > 1 ? "s" : ""}`
+                            : "Selecciona oficinas"}
+                        </span>
+                        <Building2 className="ml-2 h-4 w-4 opacity-60" />
+                      </Button>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent className="w-[520px] p-0">
+                      <div className="sticky top-0 z-10 space-y-2 border-b bg-background p-3">
+                        <DropdownMenuLabel className="px-0">Selecciona oficinas</DropdownMenuLabel>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            className={INPUT_FOCUS}
+                            placeholder="Buscar por nombre/clave/ciudad/estado…"
+                            value={officeSearch}
+                            onChange={(e) => setOfficeSearch(e.target.value)}
+                          />
+                          <Button variant="outline" size="sm" onClick={fetchOfficesFromApi} disabled={officesLoading}>
+                            <RefreshCw className={`mr-2 h-3 w-3 ${officesLoading ? "animate-spin" : ""}`} />
+                            {officesLoading ? "Cargando…" : "Recargar"}
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" size="sm" variant="secondary" onClick={() => toggleAllFiltered(true)} disabled={officesLoading}>
+                            Seleccionar filtradas
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => toggleAllFiltered(false)} disabled={officesLoading}>
+                            Quitar filtradas
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={clearAllOffices} disabled={officesLoading}>
+                            Limpiar todo
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/*oficinas */}
+                      <div className="max-h-72 overflow-auto p-2">
+                        {officesLoading ? (
+                          <p className="px-2 py-3 text-sm text-muted-foreground">Cargando oficinas…</p>
+                        ) : filteredOffices.length === 0 ? (
+                          <p className="px-2 py-3 text-sm text-muted-foreground">No se encontraron oficinas.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {filteredOffices.map((o) => {
+                              const checked = isOfficeSelected(selectedOfficeIds, o.id)
+                              return (
+                                <li key={String(o.id)}>
+                                  <DropdownMenuItem
+                                    onSelect={(e) => e.preventDefault()}
+                                    className="
+                                      cursor-default
+                                      data-[highlighted]:bg-secondary
+                                      data-[highlighted]:text-secondary-foreground
+                                      focus:bg-secondary
+                                      focus:text-secondary-foreground
+                                    "
+                                  >
+                                    <label className="flex w-full items-center gap-2">
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(v) => toggleOffice(o.id, !!v)}
+                                      />
+                                      <span className="text-sm">
+                                        <span className="font-medium">{o.nombre}</span>
+                                        {o.clave ? <span className="text-muted-foreground"> · {o.clave}</span> : null}
+                                        {(o.ciudad || o.estado) ? (
+                                          <span className="text-muted-foreground">
+                                            {" "}· {o.ciudad ?? ""}{o.ciudad && o.estado ? ", " : ""}{o.estado ?? ""}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </label>
+                                  </DropdownMenuItem>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+                      </div>
+
+                      <DropdownMenuSeparator />
+                      <div className="flex flex-wrap gap-2 p-3">
+                        {selectedOfficeIds.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">Ninguna seleccionada</span>
+                        ) : (
+                          selectedOfficeIds
+                            .map((id) => offices.find((o) => isOfficeSelected([id], o.id)))
+                            .filter(Boolean)
+                            .map((o) => (
+                              <span key={String((o as Office).id)} className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+                                {(o as Office).nombre}
+                                <button
+                                  type="button"
+                                  className="ml-1 text-muted-foreground hover:text-foreground"
+                                  onClick={() => setSelectedOfficeIds((prev) => mergeOfficeIds(prev, (o as Office).id, false))}
+                                  aria-label={`Quitar ${(o as Office).nombre}`}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))
+                        )}
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={submitting}>Cancelar</Button>
-                <Button onClick={handleSaveUser} className="bg-primary hover:bg-primary/90" disabled={submitting}>
-                  {submitting ? "Guardando..." : editingUser ? "Guardar Cambios" : "Crear Usuario"}
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+                <Button onClick={handleSaveUser} disabled={submitting}>
+                  {submitting ? "Guardando..." : editingUser ? "Actualizar" : "Crear"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -741,119 +828,89 @@ export function UserManagement() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      {/* metricas */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Usuarios</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardDescription>Total usuarios</CardDescription>
+            <CardTitle className="text-2xl">{totalUsers}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{users.length}</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Usuarios Activos</CardTitle>
-            <Users className="h-4 w-4 text-green-600" />
+          <CardHeader className="pb-2">
+            <CardDescription>Activos</CardDescription>
+            <CardTitle className="text-2xl">{activos}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{users.filter((u) => u.isActive).length}</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Administradores</CardTitle>
-            <Shield className="h-4 w-4 text-primary" />
+          <CardHeader className="pb-2">
+            <CardDescription>Inactivos</CardDescription>
+            <CardTitle className="text-2xl">{inactivos}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{users.filter((u) => u.role === "administrador").length}</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Agentes</CardTitle>
-            <Users className="h-4 w-4 text-blue-600" />
+          <CardHeader className="pb-2">
+            <CardDescription>Accesos últimos 7 días</CardDescription>
+            <CardTitle className="text-2xl">{recientes7d}</CardTitle>
           </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{users.filter((u) => u.role === "agente").length}</div></CardContent>
         </Card>
       </div>
 
-      {/* Tabla */}
+      {/* tabala */}
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Usuarios</CardTitle>
-          <CardDescription>Gestiona todos los usuarios del sistema</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Usuarios
+          </CardTitle>
+          <CardDescription>Administra usuarios, roles y oficinas asignadas.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Cargando usuarios…</p>
-          ) : (
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Usuario</TableHead>
-                  <TableHead>Rol</TableHead>
-                  <TableHead>Oficina</TableHead>
-                  <TableHead>Permisos</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Último Acceso</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Correo</TableHead>
+                  <TableHead>Oficina(s)</TableHead>
+                  <TableHead>Último acceso</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user, idx) => (
-                  <TableRow key={user.id || user.email || `row-${idx}`}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{user.name}</div>
-                        <div className="flex items-center text-sm text-muted-foreground">
-                          <Mail className="mr-1 h-3 w-3" />
-                          {user.email}
-                        </div>
-                      </div>
+                {users.map((u) => (
+                  <TableRow key={u.id} className="hover:bg-secondary/20">
+                    <TableCell className="font-medium">{u.name}</TableCell>
+                    <TableCell className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      {u.email}
                     </TableCell>
-                    <TableCell><Badge variant="outline">{getRoleDisplayName(user.role)}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex items-center text-sm">
-                        <Building2 className="mr-1 h-3 w-3 text-muted-foreground" />
-                        {user.oficina}
-                      </div>
+                    <TableCell className="flex items-center gap-1">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      {getRoleDisplayName(u.role)}
                     </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        {user.permissions?.includes("all") ? (
-                          <Badge variant="default">Todos los permisos</Badge>
-                        ) : (
-                          <span>{user.permissions?.length ?? 0} permisos</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={user.isActive ? "default" : "secondary"}>{user.isActive ? "Activo" : "Inactivo"}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{user.lastLogin}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEditUser(user)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                    <TableCell className="text-muted-foreground">{u.oficina || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{u.lastLogin}</TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button variant="outline" size="sm" onClick={() => handleEditUser(u)}>
+                        <Edit className="h-4 w-4 mr-1" /> Editar
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
+                        <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
-                {users.length === 0 && !error && (
+                {users.length === 0 && !loading && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                       No hay usuarios para mostrar.
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
-          )}
+          </div>
         </CardContent>
       </Card>
     </div>
