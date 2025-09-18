@@ -28,18 +28,19 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Users, Plus, Edit, Trash2, RefreshCw, Building2, Mail, Shield } from "lucide-react"
 import type { UserRole } from "@/types/auth"
-import { getRoleDisplayName } from "@/lib/auth"
 import { useToast } from "@/components/ui/use-toast"
 import Hashids from "hashids"
 
+/* =================== UI helpers =================== */
 const INPUT_FOCUS =
   "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
-const SELECT_FOCUS =
-  "focus:ring-2 focus:ring-secondary focus:border-secondary"
+const SELECT_FOCUS = "focus:ring-2 focus:ring-secondary focus:border-secondary"
 
+/* =================== API base =================== */
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
 const BASE = RAW.replace(/\/+$/, "")
 
+/* =================== Tipos base =================== */
 const ROLE_ID_BY_ROLE: Record<UserRole, number> = {
   administrador: 1,
   gerente: 2,
@@ -56,12 +57,14 @@ interface SystemUser {
   id: string
   name: string
   email: string
-  role: UserRole
+  role: UserRole        // para lógica interna si la necesitas
+  roleName: string      // ← nombre real del backend para UI
   oficina: string
   permissions: string[]
   isActive: boolean
   lastLogin: string
 }
+
 type OfficeId = string | number
 type Office = {
   id: OfficeId
@@ -72,11 +75,11 @@ type Office = {
   activo?: boolean
 }
 
-// hashids
-const SALT  = process.env.NEXT_PUBLIC_HASHIDS_SALT ?? ""
+/* =================== Hashids (Oficinas) =================== */
+const SALT = process.env.NEXT_PUBLIC_HASHIDS_SALT ?? ""
 const O_SALT = process.env.NEXT_PUBLIC_HASHIDS_OFFICES_SALT ?? SALT
-const MIN   = Number(process.env.NEXT_PUBLIC_HASHIDS_MIN_LENGTH ?? 0)
-const ALPH  = process.env.NEXT_PUBLIC_HASHIDS_ALPHABET || undefined
+const MIN = Number(process.env.NEXT_PUBLIC_HASHIDS_MIN_LENGTH ?? 0)
+const ALPH = process.env.NEXT_PUBLIC_HASHIDS_ALPHABET || undefined
 
 type HashidsCandidate = { salt: string; min: number; alph?: string; inst: Hashids }
 function makeCandidate(salt: string, min: number, alph?: string): HashidsCandidate {
@@ -102,9 +105,7 @@ if (O_SALT || SALT) {
 let ACTIVE_DECODER: Hashids | null = CANDIDATES_BASE.length ? CANDIDATES_BASE[0].inst : null
 let ACTIVE_DECODER_DESC = O_SALT || SALT ? `SALT=${O_SALT || SALT} MIN=${MIN}${ALPH ? " ALPH(custom)" : ""}` : "none"
 
-function isNumericString(s: string) {
-  return /^\d+$/.test(s)
-}
+function isNumericString(s: string) { return /^\d+$/.test(s) }
 function decodeWith(h: Hashids | null, hid: string): number | null {
   if (!hid) return null
   if (isNumericString(hid)) return Number(hid)
@@ -148,17 +149,13 @@ function isOfficeSelected(selected: OfficeId[], candidate: OfficeId) {
   })
 }
 function mergeOfficeIds(prev: OfficeId[], id: OfficeId, add: boolean): OfficeId[] {
-  if (add) {
-    if (isOfficeSelected(prev, id)) return prev
-    return [...prev, id]
-  } else {
-    const remNum = decodeOfficeId(id)
-    return prev.filter((x) => {
-      if (x === id) return false
-      const xn = decodeOfficeId(x)
-      return !(typeof remNum === "number" && typeof xn === "number" && remNum === xn)
-    })
-  }
+  if (add) { if (isOfficeSelected(prev, id)) return prev; return [...prev, id] }
+  const remNum = decodeOfficeId(id)
+  return prev.filter((x) => {
+    if (x === id) return false
+    const xn = decodeOfficeId(x)
+    return !(typeof remNum === "number" && typeof xn === "number" && remNum === xn)
+  })
 }
 function ensureNumericOfficeIds(ids: OfficeId[]): number[] {
   const out: number[] = []
@@ -170,6 +167,36 @@ function ensureNumericOfficeIds(ids: OfficeId[]): number[] {
   return out
 }
 
+/* =================== Hashids (Roles) =================== */
+const R_SALT = process.env.NEXT_PUBLIC_HASHIDS_ROLES_SALT ?? SALT
+const ROLE_CANDIDATES: HashidsCandidate[] = []
+{
+  const salts = Array.from(
+    new Set([
+      R_SALT,
+      `${SALT}roles`,
+      `${SALT}_roles`,
+      `${SALT}:roles`,
+      `${SALT}rol`,
+      `${SALT}_rol`,
+      `${SALT}:rol`,
+    ].filter(Boolean))
+  )
+  const mins = Array.from(new Set([MIN, 0, 6, 8, 10]))
+  for (const s of salts) for (const m of mins) ROLE_CANDIDATES.push(makeCandidate(s, m, ALPH || undefined))
+}
+let ACTIVE_ROLE_DECODER: Hashids | null = ROLE_CANDIDATES.length ? ROLE_CANDIDATES[0].inst : null
+function decodeRoleId(hidOrNum: string | number | null | undefined): number | null {
+  if (hidOrNum == null) return null
+  if (typeof hidOrNum === "number") return hidOrNum
+  const s = String(hidOrNum)
+  if (isNumericString(s)) return Number(s)
+  const nA = decodeWith(ACTIVE_ROLE_DECODER, s)
+  if (typeof nA === "number") return nA
+  return tryDecodeWithCandidates(s, ROLE_CANDIDATES)
+}
+
+/* =================== Normalizadores =================== */
 function normalizeRoleToUserRole(value: any): UserRole {
   const raw =
     typeof value === "object" && value
@@ -204,8 +231,16 @@ function toSystemUser(u: any): SystemUser {
     "Sin nombre"
 
   const email = u?.correo ?? u?.email ?? ""
+
   let role: UserRole = normalizeRoleToUserRole(u?.role ?? u?.rol)
   if (!role && typeof u?.role_id === "number") role = ROLE_BY_ID[u.role_id] ?? "agente"
+
+  const roleName =
+    u?.role?.nombre ??
+    u?.role_nombre ??
+    u?.role?.name ??
+    // fallback por si no llega nombre explícito
+    (role ? role.charAt(0).toUpperCase() + role.slice(1) : "—")
 
   let oficinaName = "—"
   const offices = u?.offices ?? u?.oficinas ?? u?.office ?? u?.oficina
@@ -226,11 +261,8 @@ function toSystemUser(u: any): SystemUser {
     : []
 
   const isActive =
-    typeof u?.is_active === "boolean"
-      ? u.is_active
-      : typeof u?.activo === "boolean"
-      ? u.activo
-      : !!u?.isActive
+    typeof u?.is_active === "boolean" ? u.is_active :
+    typeof u?.activo === "boolean" ? u.activo : !!u?.isActive
 
   const lastLoginISO = u?.last_login_at ?? u?.ultimo_acceso ?? u?.lastLogin
   const lastLogin = lastLoginISO ? new Date(lastLoginISO).toLocaleString() : "Nunca"
@@ -246,6 +278,7 @@ function toSystemUser(u: any): SystemUser {
     name: String(fullName),
     email: String(email),
     role,
+    roleName,
     oficina: String(oficinaName),
     permissions,
     isActive,
@@ -263,6 +296,16 @@ function genTempPassword() {
   return out
 }
 
+/* =================== Tipos para roles (lista del backend) =================== */
+type ApiRole = {
+  uid?: string // hashid
+  id?: number  // por si algún entorno devuelve numérico también
+  nombre?: string
+  descripcion?: string
+  is_active?: boolean
+}
+
+/* =================== Componente =================== */
 export function UserManagement() {
   const [users, setUsers] = useState<SystemUser[]>([])
   const [loading, setLoading] = useState(false)
@@ -276,6 +319,11 @@ export function UserManagement() {
   const [officeSearch, setOfficeSearch] = useState("")
   const [selectedOfficeIds, setSelectedOfficeIds] = useState<OfficeId[]>([])
   const [decoderInfo, setDecoderInfo] = useState(ACTIVE_DECODER_DESC)
+
+  // === roles ===
+  const [roles, setRoles] = useState<ApiRole[]>([])
+  const [rolesLoading, setRolesLoading] = useState(false)
+  const [selectedRoleUid, setSelectedRoleUid] = useState<string | undefined>(undefined)
 
   const { toast } = useToast()
 
@@ -294,7 +342,7 @@ export function UserManagement() {
     correo: "",
     telefono: "",
     whatsapp: "",
-    role: "agente" as UserRole,
+    role: "agente" as UserRole, // se mantiene por compatibilidad, no se usa para mostrar
     isActive: true,
     password: genTempPassword(),
   })
@@ -303,16 +351,13 @@ export function UserManagement() {
     return typeof window !== "undefined" ? localStorage.getItem("access_token") : null
   }
 
-  // usuarios
+  /* ========== API: usuarios ========== */
   async function fetchUsersFromApi() {
     setLoading(true)
     try {
       const token = getToken()
       const res = await fetch(`${BASE}/users`, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         cache: "no-store",
       })
       if (!res.ok) throw new Error((await res.text()) || `Error ${res.status}`)
@@ -326,31 +371,21 @@ export function UserManagement() {
     }
   }
 
-  // oficinas
+  /* ========== API: oficinas ========== */
   async function fetchOfficesFromApi() {
     setOfficesLoading(true)
     try {
       const token = getToken()
       const url = `${BASE}/offices?estatus_actividad=true`
       const res = await fetch(url, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         cache: "no-store",
       })
       const text = await res.text()
       if (!res.ok) throw new Error(text || `Error ${res.status}`)
-
       let data: any
-      try {
-        data = JSON.parse(text)
-      } catch {
-        throw new Error("La respuesta de /offices no es JSON válido")
-      }
-
+      try { data = JSON.parse(text) } catch { throw new Error("La respuesta de /offices no es JSON válido") }
       const list: any[] = Array.isArray(data) ? data : data?.data ?? data?.result ?? []
-
       const mapped: Office[] = list.map((o) => ({
         id: (o?.id ?? o?.office_id) as OfficeId,
         nombre: String(o?.nombre ?? o?.name ?? o?.clave ?? "Oficina"),
@@ -359,14 +394,12 @@ export function UserManagement() {
         estado: o?.estado ?? o?.state ?? undefined,
         activo: typeof o?.activo === "boolean" ? o.activo : undefined,
       }))
-
       const samples = mapped.map(x => x.id).filter(id => typeof id === "string" && !isNumericString(String(id))) as string[]
       for (const s of samples.slice(0, 2)) {
         const probe = decodeOfficeId(s)
         if (typeof probe === "number" && probe > 0) break
       }
       setDecoderInfo(ACTIVE_DECODER_DESC)
-
       setOffices(mapped)
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "No se pudieron cargar las oficinas", variant: "destructive" })
@@ -376,22 +409,63 @@ export function UserManagement() {
     }
   }
 
-  useEffect(() => {
-    fetchUsersFromApi()
-  }, [])
+  /* ========== API: roles ========== */
+  async function fetchRolesFromApi() {
+    setRolesLoading(true)
+    try {
+      const token = getToken()
+      const res = await fetch(`${BASE}/roles`, {
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        cache: "no-store",
+      })
+      const text = await res.text()
+      if (!res.ok) throw new Error(text || `Error ${res.status}`)
+      let data: any
+      try { data = JSON.parse(text) } catch { throw new Error("La respuesta de /roles no es JSON válido") }
+      const list: ApiRole[] = Array.isArray(data) ? data : (data?.data ?? data?.result ?? [])
+      setRoles(list)
 
-  useEffect(() => {
-    if (isDialogOpen && offices.length === 0 && !officesLoading) {
-      fetchOfficesFromApi()
+      // Si no hay selección todavía, intenta: 1) por formData.role (normalizado), 2) primer rol.
+      if (!selectedRoleUid) {
+        const normalized = (name?: string) => normalizeRoleToUserRole(name ?? "")
+        const byName = list.find(r => normalized(r.nombre) === formData.role)
+        if (byName?.uid) setSelectedRoleUid(byName.uid)
+        else if (list[0]?.uid) setSelectedRoleUid(list[0].uid!)
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "No se pudieron cargar los roles", variant: "destructive" })
+      setRoles([])
+    } finally {
+      setRolesLoading(false)
     }
+  }
+
+  useEffect(() => { fetchUsersFromApi() }, [])
+
+  // Al abrir el modal cargamos offices/roles si hace falta
+  useEffect(() => {
+    if (isDialogOpen) {
+      if (offices.length === 0 && !officesLoading) fetchOfficesFromApi()
+      if (roles.length === 0 && !rolesLoading) fetchRolesFromApi()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDialogOpen])
 
-  // crud
+  /* ========== CRUD ==========\*/
   async function createUser() {
     setSubmitting(true)
     try {
       const token = getToken()
-      const role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
+
+      // role_id preferente desde uid (hashid) del dropdown:
+      let role_id: number | undefined
+      if (selectedRoleUid) {
+        const n = decodeRoleId(selectedRoleUid)
+        if (typeof n === "number" && n > 0) role_id = n
+      }
+      // fallback por nombre (map estático)
+      if (!role_id) role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
+
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
       const payload: any = {
         nombres: formData.nombres,
@@ -423,7 +497,13 @@ export function UserManagement() {
     setSubmitting(true)
     try {
       const token = getToken()
-      const role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
+      let role_id: number | undefined
+      if (selectedRoleUid) {
+        const n = decodeRoleId(selectedRoleUid)
+        if (typeof n === "number" && n > 0) role_id = n
+      }
+      if (!role_id) role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
+
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
       const payload: any = {
         nombres: formData.nombres,
@@ -466,6 +546,7 @@ export function UserManagement() {
     })
     setSelectedOfficeIds([])
     setOfficeSearch("")
+    setSelectedRoleUid(undefined)
     setIsDialogOpen(true)
   }
 
@@ -485,6 +566,7 @@ export function UserManagement() {
     setSelectedOfficeIds([]); setOfficeSearch(""); setIsDialogOpen(true)
 
     if (offices.length === 0 && !officesLoading) await fetchOfficesFromApi()
+    if (roles.length === 0 && !rolesLoading) await fetchRolesFromApi()
 
     try {
       const token = getToken()
@@ -503,14 +585,17 @@ export function UserManagement() {
           ids.forEach((id) => { curr = mergeOfficeIds(curr, id, true) })
           return curr
         })
-        const roleFromDetail: UserRole | null =
-          typeof u?.role_id === "number" ? (ROLE_BY_ID[u.role_id] ?? null) : normalizeRoleToUserRole(u?.role ?? u?.rol)
-        setFormData((fd) => ({ ...fd, role: roleFromDetail || fd.role }))
-      } else {
-        const msg = await res.text()
-        throw new Error(msg || `Error ${res.status}`)
+
+        // Preselecciona rol por uid si viene en detalle
+        const roleUidFromDetail: string | null = u?.role?.uid ?? null
+        if (roleUidFromDetail) setSelectedRoleUid(String(roleUidFromDetail))
+        else {
+          // o por nombre si no vino uid
+          const match = roles.find(r => (r.nombre ?? "").trim().toLowerCase() === (user.roleName ?? "").trim().toLowerCase())
+          if (match?.uid) setSelectedRoleUid(match.uid)
+        }
       }
-    } catch (e: any) {
+    } catch {
       toast({ title: "Atención", description: "No se pudo precargar detalle de oficinas/rol.", variant: "default" })
     }
   }
@@ -546,10 +631,10 @@ export function UserManagement() {
     } finally { setSubmitting(false) }
   }
 
+  /* ====== oficinas: selección ====== */
   const toggleOffice = (id: OfficeId, checked: boolean) => {
     setSelectedOfficeIds((prev) => mergeOfficeIds(prev, id, checked))
   }
-
   const toggleAllFiltered = (check: boolean) => {
     setSelectedOfficeIds((prev) => {
       let acc = prev
@@ -559,21 +644,7 @@ export function UserManagement() {
   }
   const clearAllOffices = () => setSelectedOfficeIds([])
 
-  const OfficeChip = ({ o }: { o: Office }) => (
-    <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-      {o.nombre}
-      <button
-        type="button"
-        className="ml-1 text-muted-foreground hover:text-foreground"
-        onClick={() => setSelectedOfficeIds((prev) => mergeOfficeIds(prev, o.id, false))}
-        aria-label={`Quitar ${o.nombre}`}
-      >
-        ×
-      </button>
-    </span>
-  )
-
-  // ===== Métricas (cards) =====
+  /* ====== Métricas ====== */
   const totalUsers = users.length
   const activos = users.filter(u => u.isActive).length
   const inactivos = totalUsers - activos
@@ -614,7 +685,6 @@ export function UserManagement() {
                 </DialogDescription>
               </DialogHeader>
 
-
               <div className="grid gap-4 py-4">
                 {/* nombre */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -653,20 +723,37 @@ export function UserManagement() {
                   </div>
                 </div>
 
-                {/* rol */}
+                {/* rol (desde API) */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="role">Rol</Label>
-                    <Select value={formData.role} onValueChange={(v: UserRole) => setFormData({ ...formData, role: v })}>
+                    <Select
+                      value={selectedRoleUid}
+                      onValueChange={(uid) => {
+                        setSelectedRoleUid(uid)
+                        // (opcional) sincroniza formData.role para reglas internas
+                        const found = roles.find(r => (r.uid ?? String(r.id)) === uid)
+                        if (found?.nombre) {
+                          setFormData((fd) => ({ ...fd, role: normalizeRoleToUserRole(found.nombre) }))
+                        }
+                      }}
+                    >
                       <SelectTrigger className={SELECT_FOCUS}>
-                        <SelectValue placeholder="Selecciona un rol" />
+                        <SelectValue placeholder={rolesLoading ? "Cargando roles…" : "Selecciona un rol"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.keys(ROLE_ID_BY_ROLE).map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {getRoleDisplayName(r as UserRole)}
-                          </SelectItem>
-                        ))}
+                        {roles.length === 0 && !rolesLoading && (
+                          <div className="px-2 py-2 text-sm text-muted-foreground">Sin roles</div>
+                        )}
+                        {roles.map((r) => {
+                          const value = r.uid ?? String(r.id ?? "")
+                          const label = r.nombre ?? "(Sin nombre)"
+                          return (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          )
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
@@ -744,7 +831,6 @@ export function UserManagement() {
                         </div>
                       </div>
 
-                      {/*oficinas */}
                       <div className="max-h-72 overflow-auto p-2">
                         {officesLoading ? (
                           <p className="px-2 py-3 text-sm text-muted-foreground">Cargando oficinas…</p>
@@ -758,19 +844,10 @@ export function UserManagement() {
                                 <li key={String(o.id)}>
                                   <DropdownMenuItem
                                     onSelect={(e) => e.preventDefault()}
-                                    className="
-                                      cursor-default
-                                      data-[highlighted]:bg-secondary
-                                      data-[highlighted]:text-secondary-foreground
-                                      focus:bg-secondary
-                                      focus:text-secondary-foreground
-                                    "
+                                    className="cursor-default data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground"
                                   >
                                     <label className="flex w-full items-center gap-2">
-                                      <Checkbox
-                                        checked={checked}
-                                        onCheckedChange={(v) => toggleOffice(o.id, !!v)}
-                                      />
+                                      <Checkbox checked={checked} onCheckedChange={(v) => toggleOffice(o.id, !!v)} />
                                       <span className="text-sm">
                                         <span className="font-medium">{o.nombre}</span>
                                         {o.clave ? <span className="text-muted-foreground"> · {o.clave}</span> : null}
@@ -828,7 +905,7 @@ export function UserManagement() {
         </div>
       </div>
 
-      {/* metricas */}
+      {/* Métricas */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <Card>
           <CardHeader className="pb-2">
@@ -856,7 +933,7 @@ export function UserManagement() {
         </Card>
       </div>
 
-      {/* tabala */}
+      {/* Tabla */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -872,6 +949,7 @@ export function UserManagement() {
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Correo</TableHead>
+                  <TableHead>Rol</TableHead>
                   <TableHead>Oficina(s)</TableHead>
                   <TableHead>Último acceso</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -887,7 +965,7 @@ export function UserManagement() {
                     </TableCell>
                     <TableCell className="flex items-center gap-1">
                       <Shield className="h-4 w-4 text-muted-foreground" />
-                      {getRoleDisplayName(u.role)}
+                      {u.roleName}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{u.oficina || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{u.lastLogin}</TableCell>

@@ -3,9 +3,7 @@
 import type React from "react"
 import Logo from "@/public/sigr_images/LogoRentas.png"
 import Image from "next/image"
-import { useState, useMemo } from "react"
-import { useAuth } from "@/contexts/auth-context"
-import { getRoleDisplayName, hasPermission } from "@/lib/auth"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
@@ -32,127 +30,140 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
+import { useAuth } from "@/contexts/auth-context"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
 }
 
+/** ===== API base ===== */
+const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
+const BASE = RAW.replace(/\/+$/, "")
+
+/** ===== Perfil desde /auth/profile ===== */
+type ApiOffice = { nombre?: string; name?: string; code?: string; city?: string }
+type ApiRole = { nombre?: string; name?: string; uid?: string } | string | null | undefined
+type ApiProfile = {
+  id?: string
+  email?: string
+  name?: string
+  role?: ApiRole
+  oficina?: ApiOffice | string
+  office?: ApiOffice | string
+  permissions?: string[]
+}
+
+/** ===== Catálogo de ítems de menú =====
+ * Cada item define los permisos que habilitan su visibilidad (cualquiera de ellos).
+ */
 type MenuItem = {
   icon: React.ComponentType<{ className?: string }>
   label: string
   href: string
-  permission?: string
+  requires?: string[]        // si es undefined => siempre visible
+}
+const MENU_CATALOG: MenuItem[] = [
+  { icon: BarChart3, label: "Dashboard", href: "/dashboard" },
+  { icon: FileText, label: "Reportes", href: "/reportes", requires: ["reportes", "exportar"] },
+  { icon: Settings, label: "Admin", href: "/admin", requires: ["sistema.administrar", "gestionar_roles", "ver_usuarios", "ver_oficinas", "ver_propiedades"] },
+  { icon: CreditCard, label: "Centro de Pagos", href: "/pagos", requires: ["pagos.ver", "pagos.listar"] },
+  { icon: Users, label: "Interesados", href: "/interesados", requires: ["interesados.ver", "interesados.listar", "ver_propiedades"] },
+  { icon: Home, label: "Mis Rentas", href: "/rentas", requires: ["rentas.ver", "rentas.listar"] },
+  { icon: RotateCcw, label: "Renovaciones", href: "/renovaciones", requires: ["rentas.editar", "rentas.ver"] },
+  { icon: Building2, label: "Administraciones", href: "/administraciones", requires: ["oficinas.listar", "ver_oficinas", "ver_propiedades"] },
+  { icon: User, label: "Usuarios", href: "/usuarios", requires: ["usuarios.listar", "ver_usuarios"] },
+]
+
+/** ===== Utilidades de presentación ===== */
+function roleNameFrom(apiRole: ApiRole): string {
+  if (!apiRole) return ""
+  if (typeof apiRole === "string") return apiRole
+  return apiRole.nombre ?? apiRole.name ?? ""
 }
 
-// --- Normalizador local de rol ---
-type NormalizedRole =
-  | "administrador"
-  | "gerente"
-  | "coordinador"
-  | "agente"
-  | "propietario"
-  | "inquilino"
-
-function normalizeRole(value: any): NormalizedRole {
-  const v = String(
-    typeof value === "object" && value?.name ? value.name : value ?? ""
-  )
-    .trim()
-    .toLowerCase()
-
-  const map: Record<string, NormalizedRole> = {
-    administrador: "administrador",
-    "administrador del sistema": "administrador",
-    admin: "administrador",
-    gerente: "gerente",
-    coordinator: "coordinador",
-    coordinador: "coordinador",
-    agente: "agente",
-    agent: "agente",
-    propietario: "propietario",
-    owner: "propietario",
-    inquilino: "inquilino",
-    tenant: "inquilino",
-  }
-  return map[v] ?? "agente"
+function isAdminRole(apiRole: ApiRole): boolean {
+  const n = roleNameFrom(apiRole).trim().toLowerCase()
+  return n === "administrador" || n === "admin" || n === "administrador del sistema"
 }
 
+function officeDisplay(o?: ApiOffice | string): string {
+  if (!o) return ""
+  if (typeof o === "string") return o
+  return o.nombre ?? o.name ?? o.code ?? o.city ?? ""
+}
+
+/** ===== Componente ===== */
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user, logout } = useAuth()
+  const { logout } = useAuth() // seguimos usando el logout del contexto
   const router = useRouter()
   const pathname = usePathname()
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profile, setProfile] = useState<ApiProfile | null>(null)
+  const [loadingProfile, setLoadingProfile] = useState(false)
+
+  /** Cargar /auth/profile (siempre desde el endpoint, como pediste) */
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        setLoadingProfile(true)
+        const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null
+        const res = await fetch(`${BASE}/auth/profile`, {
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          cache: "no-store",
+        })
+        const text = await res.text()
+        if (!res.ok) throw new Error(text || `Error ${res.status}`)
+        const data: ApiProfile = JSON.parse(text)
+        if (mounted) setProfile(data)
+      } catch (e) {
+        // En un layout no saturamos con toasts; si quieres, integra useToast aquí.
+        console.error("auth/profile error:", e)
+        if (mounted) setProfile(null)
+      } finally {
+        if (mounted) setLoadingProfile(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  /** Derivados de perfil */
+  const displayName = useMemo(() => {
+    if (!profile) return undefined
+    return (
+      profile.name ||
+      profile.email ||
+      undefined
+    )
+  }, [profile])
+  const initial = (displayName?.charAt(0) ?? "?").toUpperCase()
+  const officeName = useMemo(() => officeDisplay(profile?.office ?? profile?.oficina), [profile])
+  const roleLabel = useMemo(() => roleNameFrom(profile?.role), [profile])
+
+  /** Filtrado del menú por permisos/rol */
+  const filteredMenuItems = useMemo(() => {
+    if (!profile) {
+      // mientras carga el perfil, muestra solo los ítems públicos
+      return MENU_CATALOG.filter(i => !i.requires)
+    }
+    const admin = isAdminRole(profile.role)
+    const perms = new Set((profile.permissions ?? []).map(p => String(p).trim().toLowerCase()))
+
+    const can = (requires?: string[]) => {
+      if (!requires || requires.length === 0) return true
+      if (admin) return true
+      // permite acceso si tiene cualquiera de los permisos requeridos
+      return requires.some(req => perms.has(req.trim().toLowerCase()))
+    }
+
+    return MENU_CATALOG.filter(item => can(item.requires))
+  }, [profile])
 
   const handleLogout = () => {
     logout()
     router.push("/")
   }
-
-  // Alias -> permisos requeridos
-  const PERM_MAP: Record<string, string[]> = {
-    reportes: ["reportes.generar", "reportes.exportar"],
-    admin: ["sistema.administrar", "usuarios.listar", "roles.listar", "oficinas.listar", "propiedades.listar"],
-    centro_pagos: ["pagos.ver", "pagos.listar"],
-    interesados: ["propiedades.ver", "propiedades.listar"],
-    mis_rentas: ["rentas.ver", "rentas.listar"],
-    renovaciones: ["rentas.editar"],
-    administraciones: ["oficinas.listar", "propiedades.listar"],
-    usuarios: ["usuarios.listar"],
-  }
-
-  const menuItems: MenuItem[] = [
-    { icon: BarChart3, label: "Dashboard", href: "/dashboard" },
-    { icon: FileText, label: "Reportes", href: "/reportes", permission: "reportes" },
-    { icon: Settings, label: "Admin", href: "/admin", permission: "admin" },
-    { icon: CreditCard, label: "Centro de Pagos", href: "/pagos", permission: "centro_pagos" },
-    { icon: Users, label: "Interesados", href: "/interesados", permission: "interesados" },
-    { icon: Home, label: "Mis Rentas", href: "/rentas", permission: "mis_rentas" },
-    { icon: RotateCcw, label: "Renovaciones", href: "/renovaciones", permission: "renovaciones" },
-    { icon: Building2, label: "Administraciones", href: "/administraciones", permission: "administraciones" },
-    { icon: User, label: "Usuarios", href: "/usuarios", permission: "usuarios" },
-  ]
-
-  // Helper para nombre inicial y display name
-  const displayName = useMemo(() => {
-    if (!user) return undefined
-    return (
-      (user as any)?.name ||
-      (user as any)?.full_name ||
-      [ (user as any)?.first_name, (user as any)?.last_name ].filter(Boolean).join(" ") ||
-      (user as any)?.email
-    )
-  }, [user])
-
-  const initial = (displayName?.charAt(0) ?? "?").toUpperCase()
-
-  // Oficina: objeto o string o campo "oficina"
-  const officeName = useMemo(() => {
-    if (!user) return undefined
-    const o: any = (user as any).office ?? (user as any).oficina
-    if (!o) return undefined
-    return typeof o === "object" ? o.name ?? o.code ?? o.city ?? "" : String(o)
-  }, [user])
-
-  // Filtro de menú: usa hasPermission y respeta admin global
-  const filteredMenuItems = useMemo(() => {
-    if (!user) return menuItems.filter((i) => !i.permission)
-
-    const roleIsAdmin = normalizeRole(user.role) === "administrador"
-    const hasGlobal =
-      roleIsAdmin ||
-      hasPermission(user, "sistema.administrar") ||
-      hasPermission(user, "all")
-
-    const canAccess = (alias?: string) => {
-      if (!alias) return true
-      if (hasGlobal) return true
-      const required = PERM_MAP[alias] ?? [alias]
-      // basta con 1 permiso de la lista
-      return required.some((p) => hasPermission(user, p))
-    }
-
-    return menuItems.filter((item) => canAccess(item.permission))
-  }, [user]) // dependemos del objeto user completo para evitar desincronización
 
   return (
     <div className="min-h-screen bg-background">
@@ -207,7 +218,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="p-4 border-t border-sidebar-border">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start p-2">
+                <Button variant="ghost" className="w-full justify-start p-2" disabled={loadingProfile}>
                   <Avatar className="h-8 w-8 mr-3">
                     <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
                       {initial}
@@ -216,7 +227,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   <div className="flex-1 text-left">
                     <p className="text-sm font-medium text-sidebar-foreground">{displayName ?? "—"}</p>
                     <p className="text-xs text-sidebar-foreground/70">
-                      {user ? getRoleDisplayName(normalizeRole(user.role)) : ""}
+                      {roleLabel || ""}
                     </p>
                   </div>
                 </Button>
