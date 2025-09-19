@@ -62,13 +62,13 @@ type MenuItem = {
 }
 const MENU_CATALOG: MenuItem[] = [
   { icon: BarChart3, label: "Dashboard", href: "/dashboard" },
-  { icon: FileText, label: "Reportes", href: "/reportes", requires: ["reportes", "exportar"] },
+  // { icon: FileText, label: "Reportes", href: "/reportes", requires: ["reportes", "exportar"] },
   { icon: Settings, label: "Admin", href: "/admin", requires: ["configuracion_sistema"] },
-  { icon: CreditCard, label: "Centro de Pagos", href: "/pagos", requires: ["pagos.ver", "pagos.listar"] },
-  { icon: Users, label: "Interesados", href: "/interesados", requires: ["interesados.ver", "interesados.listar", "ver_propiedades"] },
+  // { icon: CreditCard, label: "Centro de Pagos", href: "/pagos", requires: ["pagos.ver", "pagos.listar"] },
+  // { icon: Users, label: "Interesados", href: "/interesados", requires: ["interesados.ver", "interesados.listar", "ver_propiedades"] },
   { icon: Home, label: "Mis Rentas", href: "/rentas", requires: ["rentas.ver", "rentas.listar"] },
-  { icon: RotateCcw, label: "Renovaciones", href: "/renovaciones", requires: ["rentas.editar", "rentas.ver"] },
-  { icon: Building2, label: "Administraciones", href: "/administraciones", requires: ["oficinas.listar", "ver_oficinas", "ver_propiedades"] },
+  // { icon: RotateCcw, label: "Renovaciones", href: "/renovaciones", requires: ["rentas.editar", "rentas.ver"] },
+  // { icon: Building2, label: "Administraciones", href: "/administraciones", requires: ["oficinas.listar", "ver_oficinas", "ver_propiedades"] },
   // { icon: User, label: "Usuarios", href: "/usuarios", requires: ["usuarios.listar", "ver_usuarios"] },
 ]
 
