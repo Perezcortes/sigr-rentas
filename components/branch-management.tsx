@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { api } from "@/lib/auth"
+import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,13 +18,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Building2, Plus, Edit, Trash2, RefreshCw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-
-// 👇 NUEVO: permisos
-import { useAuth } from "@/contexts/auth-context"
-import { hasPermission as hasPermLib } from "@/lib/auth"
 
 interface Branch {
   id: string
@@ -64,13 +60,6 @@ const initialForm = {
 
 type FormState = typeof initialForm
 type FormErrors = Partial<Record<keyof FormState, string>>
-
-// ===== Helpers =====
-const norm = (s: string) => String(s).trim().toLowerCase()
-const PERM_CREATE = "crear_oficinas"
-const PERM_EDIT   = "editar_oficinas"
-const PERM_DELETE = "eliminar_oficinas"
-const SUPER_PERM  = "configuracion_sistema" // opcional: bypass
 
 function toBranch(row: any): Branch {
   const id = String(row?.id ?? row?.uuid ?? crypto.randomUUID())
@@ -170,7 +159,6 @@ function toOfficePayload(form: FormState) {
     ciudad_id: ciudadId,
     estate_id: estadoId,
     estado_id: estadoId,
-
     estatus_actividad: form.status === "active",
     estatus_recibir_leads: !!form.statusReceiveLeads,
   }
@@ -203,6 +191,17 @@ export function BranchManagement() {
   const [formErrors, setFormErrors] = useState<FormErrors>({})
   const { toast } = useToast()
 
+  // === permisos ===
+  const { user } = useAuth()
+  const userPerms: string[] =
+    (user as any)?.permissions ?? (user as any)?.permisos ?? []
+  const has = (p: string) => userPerms.includes(p)
+
+  const canView = has("ver_oficinas") || has("ver_todas_oficinas")
+  const canCreate = has("crear_oficinas")
+  const canEdit = has("editar_oficinas")
+  const canDelete = has("eliminar_oficinas")
+
   const [filters, setFilters] = useState<{
     search: string
     cityId?: string
@@ -218,23 +217,8 @@ export function BranchManagement() {
     return () => clearTimeout(t)
   }, [searchValue])
 
-  // ===== Permisos del usuario autenticado
-  const { user } = useAuth()
-  const userPerms = useMemo(
-    () => new Set<string>(Array.isArray(user?.permissions) ? user!.permissions.map(norm) : []),
-    [user]
-  )
-  const hasOne = (p: string) => {
-    try {
-      if (typeof hasPermLib === "function") return !!hasPermLib(user, p)
-    } catch {}
-    return userPerms.has(norm(p))
-  }
-  const canCreateBranch = hasOne(PERM_CREATE) || hasOne(SUPER_PERM)
-  const canEditBranch   = hasOne(PERM_EDIT)   || hasOne(SUPER_PERM)
-  const canDeleteBranch = hasOne(PERM_DELETE) || hasOne(SUPER_PERM)
-
   async function fetchOffices(opts?: { keepMessages?: boolean }) {
+    if (!canView) return
     setLoading(true)
 
     try {
@@ -254,13 +238,11 @@ export function BranchManagement() {
       const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.result ?? [])
       setBranches(list.map(toBranch))
     } catch (e: any) {
-      if (!opts?.keepMessages) {
-        toast({
-          title: "Error",
-          description: e?.message || "No se pudo obtener la lista de oficinas",
-          variant: "destructive",
-        })
-      }
+      toast({
+        title: "Error",
+        description: e?.message || "No se pudo obtener la lista de oficinas",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -268,15 +250,17 @@ export function BranchManagement() {
 
   useEffect(() => {
     fetchOffices()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canView])
 
   useEffect(() => {
     fetchOffices({ keepMessages: true })
-  }, [filters.cityId, filters.estateId, filters.status, filters.search])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.cityId, filters.estateId, filters.status, filters.search, canView])
 
   async function createOffice() {
-    if (!canCreateBranch) {
-      toast({ title: "Permiso requerido", description: "No puedes crear sucursales.", variant: "destructive" })
+    if (!canCreate) {
+      toast({ title: "Permisos", description: "No puedes crear oficinas.", variant: "destructive" })
       return
     }
     setSubmitting(true)
@@ -297,10 +281,9 @@ export function BranchManagement() {
       setSubmitting(false)
     }
   }
-
   async function updateOffice(id: string) {
-    if (!canEditBranch) {
-      toast({ title: "Permiso requerido", description: "No puedes editar sucursales.", variant: "destructive" })
+    if (!canEdit) {
+      toast({ title: "Permisos", description: "No puedes editar oficinas.", variant: "destructive" })
       return
     }
     setSubmitting(true)
@@ -323,8 +306,8 @@ export function BranchManagement() {
   }
 
   async function deleteOffice(id: string) {
-    if (!canDeleteBranch) {
-      toast({ title: "Permiso requerido", description: "No puedes eliminar sucursales.", variant: "destructive" })
+    if (!canDelete) {
+      toast({ title: "Permisos", description: "No puedes eliminar oficinas.", variant: "destructive" })
       return
     }
     const ok = typeof window !== "undefined" ? window.confirm("¿Eliminar esta oficina?") : true
@@ -343,8 +326,8 @@ export function BranchManagement() {
   }
 
   const openCreate = () => {
-    if (!canCreateBranch) {
-      toast({ title: "Permiso requerido", description: "No puedes crear sucursales.", variant: "destructive" })
+    if (!canCreate) {
+      toast({ title: "Permisos", description: "No puedes crear oficinas.", variant: "destructive" })
       return
     }
     setEditingBranch(null)
@@ -354,8 +337,8 @@ export function BranchManagement() {
   }
 
   const handleEditBranch = (branch: Branch) => {
-    if (!canEditBranch) {
-      toast({ title: "Permiso requerido", description: "No puedes editar sucursales.", variant: "destructive" })
+    if (!canEdit) {
+      toast({ title: "Permisos", description: "No puedes editar oficinas.", variant: "destructive" })
       return
     }
     setEditingBranch(branch)
@@ -379,7 +362,10 @@ export function BranchManagement() {
     const errs = validateForm(formData)
     setFormErrors(errs)
     if (Object.keys(errs).length > 0) {
-      toast({ title: "Validación", description: "Revisa los campos marcados en el formulario." })
+      toast({
+        title: "Validación",
+        description: "Revisa los campos marcados en el formulario.",
+      })
       return
     }
     if (editingBranch) updateOffice(editingBranch.id)
@@ -395,6 +381,20 @@ export function BranchManagement() {
     "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
   const selectFocus = "focus:ring-2 focus:ring-secondary focus:border-secondary"
 
+  // Si no puede ver, mostramos un fallback simple
+  if (!canView) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">Gestión de Sucursales</h2>
+            <p className="text-muted-foreground">No tienes permisos para ver oficinas.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -409,8 +409,7 @@ export function BranchManagement() {
             {loading ? "Cargando..." : "Recargar"}
           </Button>
 
-          {/* Crear solo si hay permiso */}
-          {canCreateBranch && (
+          {canCreate && (
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button onClick={openCreate} className="bg-primary hover:bg-primary/90" disabled={submitting}>
@@ -719,7 +718,7 @@ export function BranchManagement() {
                   <TableHead>Ciudad</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Gerente</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  {(canEdit || canDelete) && <TableHead className="text-right">Acciones</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -730,27 +729,26 @@ export function BranchManagement() {
                     <TableCell>{b.cityName || "—"}</TableCell>
                     <TableCell>{b.stateName || "—"}</TableCell>
                     <TableCell>{b.manager || "—"}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {canEditBranch && (
-                        <Button variant="outline" size="sm" onClick={() => handleEditBranch(b)}>
-                          <Edit className="h-4 w-4 mr-1" /> Editar
-                        </Button>
-                      )}
-                      {canDeleteBranch && (
-                        <Button variant="destructive" size="sm" onClick={() => deleteOffice(b.id)}>
-                          <Trash2 className="h-4 w-4 mr-1" /> Eliminar
-                        </Button>
-                      )}
-                      {!canEditBranch && !canDeleteBranch && (
-                        <span className="text-xs text-muted-foreground">Sin acciones</span>
-                      )}
-                    </TableCell>
+                    {(canEdit || canDelete) && (
+                      <TableCell className="text-right space-x-2">
+                        {canEdit && (
+                          <Button variant="outline" size="sm" onClick={() => handleEditBranch(b)}>
+                            <Edit className="h-4 w-4 mr-1" /> Editar
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="destructive" size="sm" onClick={() => deleteOffice(b.id)}>
+                            <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
 
                 {branches.length === 0 && !loading && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={canEdit || canDelete ? 6 : 5} className="text-center text-muted-foreground py-8">
                       No hay sucursales para mostrar.
                     </TableCell>
                   </TableRow>
