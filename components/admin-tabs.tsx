@@ -11,7 +11,6 @@ import { useAuth } from "@/contexts/auth-context"
 export function AdminTabs() {
   const { user } = useAuth()
 
-  // Solo ADMIN puede ver "Roles" (comparación estricta por nombre del rol que responde la API)
   const isAdmin = useMemo(() => {
     const roleObjOrString: any = user?.role ?? ""
     const roleRaw =
@@ -27,7 +26,10 @@ export function AdminTabs() {
 
   return (
     <Tabs defaultValue={defaultValue} className="space-y-6">
-      <TabsList className="grid w-full grid-cols-3 max-w-2xl">
+      {/* 1) columnas dinámicas; 2) w-fit para que no sobre fondo */}
+      <TabsList
+        className={`grid ${canViewRoles ? "grid-cols-3" : "grid-cols-2"} w-fit max-w-2xl`}
+      >
         <TabsTrigger value="branches" className="flex items-center gap-2">
           <Building2 className="h-4 w-4" />
           Sucursales
