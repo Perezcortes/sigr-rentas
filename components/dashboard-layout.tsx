@@ -53,25 +53,23 @@ type ApiProfile = {
   permissions?: string[]
 }
 
-/** ===== Catálogo de ítems de menú =====
- * Cada item define los permisos que habilitan su visibilidad (cualquiera de ellos).
- */
+/** ===== Catálogo de ítems de menú ===== */
 type MenuItem = {
   icon: React.ComponentType<{ className?: string }>
   label: string
   href: string
-  requires?: string[]        // si es undefined => siempre visible
+  requires?: string[]        // undefined => siempre visible
 }
 const MENU_CATALOG: MenuItem[] = [
   { icon: BarChart3, label: "Dashboard", href: "/dashboard" },
   { icon: FileText, label: "Reportes", href: "/reportes", requires: ["reportes", "exportar"] },
-  { icon: Settings, label: "Admin", href: "/admin", requires: ["sistema.administrar", "gestionar_roles", "ver_usuarios", "ver_oficinas", "ver_propiedades"] },
+  { icon: Settings, label: "Admin", href: "/admin", requires: ["configuracion_sistema"] },
   { icon: CreditCard, label: "Centro de Pagos", href: "/pagos", requires: ["pagos.ver", "pagos.listar"] },
   { icon: Users, label: "Interesados", href: "/interesados", requires: ["interesados.ver", "interesados.listar", "ver_propiedades"] },
   { icon: Home, label: "Mis Rentas", href: "/rentas", requires: ["rentas.ver", "rentas.listar"] },
   { icon: RotateCcw, label: "Renovaciones", href: "/renovaciones", requires: ["rentas.editar", "rentas.ver"] },
   { icon: Building2, label: "Administraciones", href: "/administraciones", requires: ["oficinas.listar", "ver_oficinas", "ver_propiedades"] },
-  { icon: User, label: "Usuarios", href: "/usuarios", requires: ["usuarios.listar", "ver_usuarios"] },
+  // { icon: User, label: "Usuarios", href: "/usuarios", requires: ["usuarios.listar", "ver_usuarios"] },
 ]
 
 /** ===== Utilidades de presentación ===== */
@@ -94,7 +92,7 @@ function officeDisplay(o?: ApiOffice | string): string {
 
 /** ===== Componente ===== */
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { logout } = useAuth() // seguimos usando el logout del contexto
+  const { logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
@@ -102,7 +100,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [profile, setProfile] = useState<ApiProfile | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
 
-  /** Cargar /auth/profile (siempre desde el endpoint, como pediste) */
+  /** Cargar /auth/profile desde el endpoint */
   useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -118,7 +116,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         const data: ApiProfile = JSON.parse(text)
         if (mounted) setProfile(data)
       } catch (e) {
-        // En un layout no saturamos con toasts; si quieres, integra useToast aquí.
         console.error("auth/profile error:", e)
         if (mounted) setProfile(null)
       } finally {
@@ -131,29 +128,30 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   /** Derivados de perfil */
   const displayName = useMemo(() => {
     if (!profile) return undefined
-    return (
-      profile.name ||
-      profile.email ||
-      undefined
-    )
+    return profile.name || profile.email || undefined
   }, [profile])
+
   const initial = (displayName?.charAt(0) ?? "?").toUpperCase()
   const officeName = useMemo(() => officeDisplay(profile?.office ?? profile?.oficina), [profile])
-  const roleLabel = useMemo(() => roleNameFrom(profile?.role), [profile])
 
-  /** Filtrado del menú por permisos/rol */
+  // Mostrar EXACTAMENTE lo que responde la API
+  const roleLabel = useMemo(() => {
+    if (!profile) return ""
+    return roleNameFrom(profile.role)
+  }, [profile])
+
+  /** Filtrado del menú */
   const filteredMenuItems = useMemo(() => {
     if (!profile) {
-      // mientras carga el perfil, muestra solo los ítems públicos
       return MENU_CATALOG.filter(i => !i.requires)
     }
-    const admin = isAdminRole(profile.role)
     const perms = new Set((profile.permissions ?? []).map(p => String(p).trim().toLowerCase()))
+    const isAdminLite = perms.has("configuracion_sistema")
+    const adminByRole = isAdminRole(profile.role)
 
     const can = (requires?: string[]) => {
       if (!requires || requires.length === 0) return true
-      if (admin) return true
-      // permite acceso si tiene cualquiera de los permisos requeridos
+      if (adminByRole || isAdminLite) return true
       return requires.some(req => perms.has(req.trim().toLowerCase()))
     }
 
