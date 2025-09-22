@@ -21,6 +21,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building2, Plus, Edit, Trash2, RefreshCw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
+/* ────────────────────────────────
+   Reglas / límites
+──────────────────────────────── */
+const MAX_BRANCH_NAME = 80
+const MIN_BRANCH_NAME = 2
+const MAX_MANAGER_NAME = 80
+const MAX_ADDRESS = 160
+const MAX_STREET = 120
+const MAX_NEIGHBORHOOD = 80
+const MAX_MUNICIPALITY = 80
+const MAX_CITYTEXT = 80
+const MAX_CODE = 16
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PHONE_RE = /^[0-9()+\-.\s]{7,18}$/          // tolerante, 7–18 chars válidos
+const POSTAL_RE = /^\d{4,6}$/                     // CP 4–6 dígitos (ajústalo si necesitas 5 fijo)
+const CODE_RE = /^[A-Za-z0-9_-]+$/                // letras/números/guion/guion_bajo
+const LAT_RE = /^-?\d+(\.\d+)?$/
+const LNG_RE = /^-?\d+(\.\d+)?$/
+
 interface Branch {
   id: string
   name: string
@@ -118,17 +138,75 @@ function safeNumber(v: string | number): number | undefined {
   return typeof n === "number" && Number.isFinite(n) ? n : undefined
 }
 
+/* ────────────────────────────────
+   Validación (solo reglas de campos)
+──────────────────────────────── */
 function validateForm(f: FormState): FormErrors {
-  const errors: FormErrors = {}
-  if (!f.name || !f.name.trim()) errors.name = "El nombre es obligatorio"
-  if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) errors.email = "Email inválido"
+  const e: FormErrors = {}
 
-  const lat = safeNumber(f.lat)
-  const lng = safeNumber(f.lng)
-  if (f.lat !== "" && lat === undefined) errors.lat = "Lat debe ser numérica"
-  if (f.lng !== "" && lng === undefined) errors.lng = "Lng debe ser numérica"
+  const name = (f.name ?? "").trim()
+  if (!name) e.name = "El nombre es obligatorio"
+  else if (name.length < MIN_BRANCH_NAME) e.name = `Mínimo ${MIN_BRANCH_NAME} caracteres`
+  else if (name.length > MAX_BRANCH_NAME) e.name = `Máximo ${MAX_BRANCH_NAME} caracteres`
 
-  return errors
+  const code = (f.code ?? "").trim()
+  if (code) {
+    if (code.length > MAX_CODE) e.code = `Máximo ${MAX_CODE} caracteres`
+    else if (!CODE_RE.test(code)) e.code = "Usa solo letras, números, guion y guion bajo"
+  }
+
+  const manager = (f.manager ?? "").trim()
+  if (manager.length > MAX_MANAGER_NAME) e.manager = `Máximo ${MAX_MANAGER_NAME} caracteres`
+
+  const email = (f.email ?? "").trim()
+  if (email && !EMAIL_RE.test(email)) e.email = "Email inválido"
+
+  const phone = (f.phone ?? "").trim()
+  if (phone && !PHONE_RE.test(phone)) e.phone = "Teléfono inválido"
+
+  const address = (f.address ?? "").trim()
+  if (address.length > MAX_ADDRESS) e.address = `Máximo ${MAX_ADDRESS} caracteres`
+
+  const street = (f.street ?? "").trim()
+  if (street.length > MAX_STREET) e.street = `Máximo ${MAX_STREET} caracteres`
+
+  const neighborhood = (f.neighborhood ?? "").trim()
+  if (neighborhood.length > MAX_NEIGHBORHOOD) e.neighborhood = `Máximo ${MAX_NEIGHBORHOOD} caracteres`
+
+  const municipality = (f.municipality ?? "").trim()
+  if (municipality.length > MAX_MUNICIPALITY) e.municipality = `Máximo ${MAX_MUNICIPALITY} caracteres`
+
+  const cityText = (f.cityText ?? "").trim()
+  if (cityText.length > MAX_CITYTEXT) e.cityText = `Máximo ${MAX_CITYTEXT} caracteres`
+
+  const postal = (f.postalCode ?? "").trim()
+  if (postal && !POSTAL_RE.test(postal)) e.postalCode = "Código postal inválido"
+
+  const cityId = safeNumber(f.cityId)
+  if (f.cityId !== "" && cityId === undefined) e.cityId = "Debe ser numérico"
+
+  const stateId = safeNumber(f.stateId)
+  if (f.stateId !== "" && stateId === undefined) e.stateId = "Debe ser numérico"
+
+  const latStr = String(f.lat ?? "")
+  if (latStr !== "") {
+    if (!LAT_RE.test(latStr)) e.lat = "Lat debe ser numérica"
+    else {
+      const lat = Number(latStr)
+      if (lat < -90 || lat > 90) e.lat = "Lat debe estar entre −90 y 90"
+    }
+  }
+
+  const lngStr = String(f.lng ?? "")
+  if (lngStr !== "") {
+    if (!LNG_RE.test(lngStr)) e.lng = "Lng debe ser numérica"
+    else {
+      const lng = Number(lngStr)
+      if (lng < -180 || lng > 180) e.lng = "Lng debe estar entre −180 y 180"
+    }
+  }
+
+  return e
 }
 
 function toOfficePayload(form: FormState) {
@@ -189,6 +267,9 @@ export function BranchManagement() {
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
   const [formData, setFormData] = useState<FormState>(initialForm)
   const [formErrors, setFormErrors] = useState<FormErrors>({})
+  const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({})
+  const [submitted, setSubmitted] = useState(false)
+
   const { toast } = useToast()
 
   // === permisos ===
@@ -259,6 +340,11 @@ export function BranchManagement() {
   }, [filters.cityId, filters.estateId, filters.status, filters.search, canView])
 
   async function createOffice() {
+    setSubmitted(true)
+    const errs = validateForm(formData)
+    setFormErrors(errs)
+    if (Object.keys(errs).length > 0) return
+
     if (!canCreate) {
       toast({ title: "Permisos", description: "No puedes crear oficinas.", variant: "destructive" })
       return
@@ -274,6 +360,8 @@ export function BranchManagement() {
       toast({ title: "Éxito", description: "Oficina creada correctamente" })
       setIsDialogOpen(false)
       setFormData(initialForm)
+      setTouched({})
+      setSubmitted(false)
       await fetchOffices()
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "No se pudo crear la oficina", variant: "destructive" })
@@ -282,6 +370,11 @@ export function BranchManagement() {
     }
   }
   async function updateOffice(id: string) {
+    setSubmitted(true)
+    const errs = validateForm(formData)
+    setFormErrors(errs)
+    if (Object.keys(errs).length > 0) return
+
     if (!canEdit) {
       toast({ title: "Permisos", description: "No puedes editar oficinas.", variant: "destructive" })
       return
@@ -297,6 +390,8 @@ export function BranchManagement() {
       toast({ title: "Éxito", description: "Oficina actualizada" })
       setIsDialogOpen(false)
       setFormData(initialForm)
+      setTouched({})
+      setSubmitted(false)
       await fetchOffices()
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "No se pudo actualizar la oficina", variant: "destructive" })
@@ -326,21 +421,15 @@ export function BranchManagement() {
   }
 
   const openCreate = () => {
-    if (!canCreate) {
-      toast({ title: "Permisos", description: "No puedes crear oficinas.", variant: "destructive" })
-      return
-    }
     setEditingBranch(null)
     setFormData(initialForm)
     setFormErrors({})
+    setTouched({})
+    setSubmitted(false)
     setIsDialogOpen(true)
   }
 
   const handleEditBranch = (branch: Branch) => {
-    if (!canEdit) {
-      toast({ title: "Permisos", description: "No puedes editar oficinas.", variant: "destructive" })
-      return
-    }
     setEditingBranch(branch)
     setFormData((prev) => ({
       ...initialForm,
@@ -355,21 +444,43 @@ export function BranchManagement() {
       statusReceiveLeads: true,
     }))
     setFormErrors({})
+    setTouched({})
+    setSubmitted(false)
     setIsDialogOpen(true)
   }
 
   const handleSaveBranch = () => {
+    setSubmitted(true)
     const errs = validateForm(formData)
     setFormErrors(errs)
-    if (Object.keys(errs).length > 0) {
-      toast({
-        title: "Validación",
-        description: "Revisa los campos marcados en el formulario.",
-      })
-      return
-    }
+    if (Object.keys(errs).length > 0) return
     if (editingBranch) updateOffice(editingBranch.id)
     else createOffice()
+  }
+
+  /* ────────────────────────────────
+     Helpers de UI para validación inline
+  ───────────────────────────────── */
+  const inputFocus =
+    "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
+  const selectFocus = "focus:ring-2 focus:ring-secondary focus:border-secondary"
+
+  const err = (k: keyof FormState) =>
+    !!formErrors[k] && (touched[k] || submitted)
+
+  const cls = (k: keyof FormState) =>
+    `${inputFocus} ${err(k) ? "border-destructive focus-visible:ring-destructive" : ""}`
+
+  function setField<K extends keyof FormState>(k: K, v: FormState[K]) {
+    setFormData((fd) => {
+      const nf = { ...fd, [k]: v }
+      setFormErrors(validateForm(nf))
+      return nf
+    })
+  }
+  function onBlurField<K extends keyof FormState>(k: K) {
+    setTouched((t) => ({ ...t, [k]: true }))
+    setFormErrors(validateForm(formData))
   }
 
   const totalEmployees = useMemo(
@@ -377,11 +488,8 @@ export function BranchManagement() {
     [branches]
   )
 
-  const inputFocus =
-    "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
-  const selectFocus = "focus:ring-2 focus:ring-secondary focus:border-secondary"
-
-  // Si no puede ver, mostramos un fallback simple
+  // Si no puede ver, fallback simple
+  const { user: _user } = useAuth()
   if (!canView) {
     return (
       <div className="space-y-6">
@@ -434,21 +542,37 @@ export function BranchManagement() {
                       <Input
                         id="name"
                         value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        onChange={(e) => setField("name", e.target.value)}
+                        onBlur={() => onBlurField("name")}
                         placeholder="Nombre de la sucursal"
-                        className={inputFocus}
+                        className={cls("name")}
+                        aria-invalid={err("name")}
+                        aria-describedby={err("name") ? "err-name" : undefined}
+                        maxLength={MAX_BRANCH_NAME}
                       />
-                      {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
+                      <div className="flex items-center justify-between">
+                        {err("name") && (
+                          <p id="err-name" className="text-xs text-destructive mt-1">{formErrors.name}</p>
+                        )}
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {(formData.name ?? "").trim().length}/{MAX_BRANCH_NAME}
+                        </span>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="code">Clave</Label>
                       <Input
                         id="code"
                         value={formData.code}
-                        onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                        onChange={(e) => setField("code", e.target.value)}
+                        onBlur={() => onBlurField("code")}
                         placeholder="Ej. OAX01"
-                        className={inputFocus}
+                        className={cls("code")}
+                        aria-invalid={err("code")}
+                        aria-describedby={err("code") ? "err-code" : undefined}
+                        maxLength={MAX_CODE}
                       />
+                      {err("code") && <p id="err-code" className="text-xs text-destructive mt-1">{formErrors.code}</p>}
                     </div>
                   </div>
 
@@ -458,10 +582,15 @@ export function BranchManagement() {
                       <Input
                         id="manager"
                         value={formData.manager}
-                        onChange={(e) => setFormData({ ...formData, manager: e.target.value })}
+                        onChange={(e) => setField("manager", e.target.value)}
+                        onBlur={() => onBlurField("manager")}
                         placeholder="Nombre del responsable"
-                        className={inputFocus}
+                        className={cls("manager")}
+                        aria-invalid={err("manager")}
+                        aria-describedby={err("manager") ? "err-manager" : undefined}
+                        maxLength={MAX_MANAGER_NAME}
                       />
+                      {err("manager") && <p id="err-manager" className="text-xs text-destructive mt-1">{formErrors.manager}</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -470,11 +599,14 @@ export function BranchManagement() {
                         id="email"
                         type="email"
                         value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        onChange={(e) => setField("email", e.target.value)}
+                        onBlur={() => onBlurField("email")}
                         placeholder="sucursal@empresa.com"
-                        className={inputFocus}
+                        className={cls("email")}
+                        aria-invalid={err("email")}
+                        aria-describedby={err("email") ? "err-email" : undefined}
                       />
-                      {formErrors.email && <p className="text-xs text-destructive">{formErrors.email}</p>}
+                      {err("email") && <p id="err-email" className="text-xs text-destructive mt-1">{formErrors.email}</p>}
                     </div>
                   </div>
 
@@ -484,10 +616,14 @@ export function BranchManagement() {
                       <Input
                         id="phone"
                         value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        onChange={(e) => setField("phone", e.target.value)}
+                        onBlur={() => onBlurField("phone")}
                         placeholder="+52 55 1234-5678"
-                        className={inputFocus}
+                        className={cls("phone")}
+                        aria-invalid={err("phone")}
+                        aria-describedby={err("phone") ? "err-phone" : undefined}
                       />
+                      {err("phone") && <p id="err-phone" className="text-xs text-destructive mt-1">{formErrors.phone}</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -495,7 +631,7 @@ export function BranchManagement() {
                       <Select
                         value={formData.status}
                         onValueChange={(value: "active" | "inactive") =>
-                          setFormData({ ...formData, status: value })
+                          setField("status", value)
                         }
                       >
                         <SelectTrigger className={selectFocus}>
@@ -514,10 +650,15 @@ export function BranchManagement() {
                     <Input
                       id="address"
                       value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      onChange={(e) => setField("address", e.target.value)}
+                      onBlur={() => onBlurField("address")}
                       placeholder="Calle, número, colonia"
-                      className={inputFocus}
+                      className={cls("address")}
+                      aria-invalid={err("address")}
+                      aria-describedby={err("address") ? "err-address" : undefined}
+                      maxLength={MAX_ADDRESS}
                     />
+                    {err("address") && <p id="err-address" className="text-xs text-destructive mt-1">{formErrors.address}</p>}
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -526,19 +667,25 @@ export function BranchManagement() {
                       <Input
                         id="street"
                         value={formData.street}
-                        onChange={(e) => setFormData({ ...formData, street: e.target.value })}
+                        onChange={(e) => setField("street", e.target.value)}
+                        onBlur={() => onBlurField("street")}
                         placeholder="Av. Benito Juárez"
-                        className={inputFocus}
+                        className={cls("street")}
+                        aria-invalid={err("street")}
+                        aria-describedby={err("street") ? "err-street" : undefined}
+                        maxLength={MAX_STREET}
                       />
+                      {err("street") && <p id="err-street" className="text-xs text-destructive mt-1">{formErrors.street}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="extNumber">No. exterior</Label>
                       <Input
                         id="extNumber"
                         value={formData.extNumber}
-                        onChange={(e) => setFormData({ ...formData, extNumber: e.target.value })}
+                        onChange={(e) => setField("extNumber", e.target.value)}
+                        onBlur={() => onBlurField("extNumber")}
                         placeholder="123"
-                        className={inputFocus}
+                        className={cls("extNumber")}
                       />
                     </div>
                     <div className="space-y-2">
@@ -546,9 +693,10 @@ export function BranchManagement() {
                       <Input
                         id="intNumber"
                         value={formData.intNumber}
-                        onChange={(e) => setFormData({ ...formData, intNumber: e.target.value })}
+                        onChange={(e) => setField("intNumber", e.target.value)}
+                        onBlur={() => onBlurField("intNumber")}
                         placeholder="A-2"
-                        className={inputFocus}
+                        className={cls("intNumber")}
                       />
                     </div>
                     <div className="space-y-2">
@@ -556,10 +704,15 @@ export function BranchManagement() {
                       <Input
                         id="neighborhood"
                         value={formData.neighborhood}
-                        onChange={(e) => setFormData({ ...formData, neighborhood: e.target.value })}
+                        onChange={(e) => setField("neighborhood", e.target.value)}
+                        onBlur={() => onBlurField("neighborhood")}
                         placeholder="Centro"
-                        className={inputFocus}
+                        className={cls("neighborhood")}
+                        aria-invalid={err("neighborhood")}
+                        aria-describedby={err("neighborhood") ? "err-neighborhood" : undefined}
+                        maxLength={MAX_NEIGHBORHOOD}
                       />
+                      {err("neighborhood") && <p id="err-neighborhood" className="text-xs text-destructive mt-1">{formErrors.neighborhood}</p>}
                     </div>
                   </div>
 
@@ -569,10 +722,15 @@ export function BranchManagement() {
                       <Input
                         id="municipality"
                         value={formData.municipality}
-                        onChange={(e) => setFormData({ ...formData, municipality: e.target.value })}
+                        onChange={(e) => setField("municipality", e.target.value)}
+                        onBlur={() => onBlurField("municipality")}
                         placeholder="Oaxaca de Juárez"
-                        className={inputFocus}
+                        className={cls("municipality")}
+                        aria-invalid={err("municipality")}
+                        aria-describedby={err("municipality") ? "err-municipality" : undefined}
+                        maxLength={MAX_MUNICIPALITY}
                       />
+                      {err("municipality") && <p id="err-municipality" className="text-xs text-destructive mt-1">{formErrors.municipality}</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -580,10 +738,14 @@ export function BranchManagement() {
                       <Input
                         id="postalCode"
                         value={formData.postalCode}
-                        onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                        onChange={(e) => setField("postalCode", e.target.value)}
+                        onBlur={() => onBlurField("postalCode")}
                         placeholder="68000"
-                        className={inputFocus}
+                        className={cls("postalCode")}
+                        aria-invalid={err("postalCode")}
+                        aria-describedby={err("postalCode") ? "err-postalCode" : undefined}
                       />
+                      {err("postalCode") && <p id="err-postalCode" className="text-xs text-destructive mt-1">{formErrors.postalCode}</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -591,10 +753,15 @@ export function BranchManagement() {
                       <Input
                         id="cityText"
                         value={formData.cityText}
-                        onChange={(e) => setFormData({ ...formData, cityText: e.target.value })}
+                        onChange={(e) => setField("cityText", e.target.value)}
+                        onBlur={() => onBlurField("cityText")}
                         placeholder="Oaxaca"
-                        className={inputFocus}
+                        className={cls("cityText")}
+                        aria-invalid={err("cityText")}
+                        aria-describedby={err("cityText") ? "err-cityText" : undefined}
+                        maxLength={MAX_CITYTEXT}
                       />
+                      {err("cityText") && <p id="err-cityText" className="text-xs text-destructive mt-1">{formErrors.cityText}</p>}
                     </div>
                   </div>
 
@@ -605,10 +772,14 @@ export function BranchManagement() {
                         id="cityId"
                         type="number"
                         value={formData.cityId}
-                        onChange={(e) => setFormData({ ...formData, cityId: e.target.value })}
+                        onChange={(e) => setField("cityId", e.target.value)}
+                        onBlur={() => onBlurField("cityId")}
                         placeholder="Ej. 125"
-                        className={inputFocus}
+                        className={cls("cityId")}
+                        aria-invalid={err("cityId")}
+                        aria-describedby={err("cityId") ? "err-cityId" : undefined}
                       />
+                      {err("cityId") && <p id="err-cityId" className="text-xs text-destructive mt-1">{formErrors.cityId}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="stateId">Estado (ID numérico)</Label>
@@ -616,10 +787,14 @@ export function BranchManagement() {
                         id="stateId"
                         type="number"
                         value={formData.stateId}
-                        onChange={(e) => setFormData({ ...formData, stateId: e.target.value })}
+                        onChange={(e) => setField("stateId", e.target.value)}
+                        onBlur={() => onBlurField("stateId")}
                         placeholder="Ej. 20"
-                        className={inputFocus}
+                        className={cls("stateId")}
+                        aria-invalid={err("stateId")}
+                        aria-describedby={err("stateId") ? "err-stateId" : undefined}
                       />
+                      {err("stateId") && <p id="err-stateId" className="text-xs text-destructive mt-1">{formErrors.stateId}</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -628,11 +803,14 @@ export function BranchManagement() {
                         id="lat"
                         type="number"
                         value={formData.lat}
-                        onChange={(e) => setFormData({ ...formData, lat: e.target.value })}
+                        onChange={(e) => setField("lat", e.target.value)}
+                        onBlur={() => onBlurField("lat")}
                         placeholder="17.0654"
-                        className={inputFocus}
+                        className={cls("lat")}
+                        aria-invalid={err("lat")}
+                        aria-describedby={err("lat") ? "err-lat" : undefined}
                       />
-                      {formErrors.lat && <p className="text-xs text-destructive">{formErrors.lat}</p>}
+                      {err("lat") && <p id="err-lat" className="text-xs text-destructive mt-1">{formErrors.lat}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="lng">Lng</Label>
@@ -640,11 +818,14 @@ export function BranchManagement() {
                         id="lng"
                         type="number"
                         value={formData.lng}
-                        onChange={(e) => setFormData({ ...formData, lng: e.target.value })}
+                        onChange={(e) => setField("lng", e.target.value)}
+                        onBlur={() => onBlurField("lng")}
                         placeholder="−96.7236"
-                        className={inputFocus}
+                        className={cls("lng")}
+                        aria-invalid={err("lng")}
+                        aria-describedby={err("lng") ? "err-lng" : undefined}
                       />
-                      {formErrors.lng && <p className="text-xs text-destructive">{formErrors.lng}</p>}
+                      {err("lng") && <p id="err-lng" className="text-xs text-destructive mt-1">{formErrors.lng}</p>}
                     </div>
                   </div>
                 </div>

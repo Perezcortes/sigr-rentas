@@ -31,20 +31,10 @@ import type { UserRole } from "@/types/auth"
 import { useToast } from "@/components/ui/use-toast"
 import Hashids from "hashids"
 
-// 👇 NUEVO: auth context para leer permisos del profile
-import { useAuth } from "@/contexts/auth-context"
-
 /* =================== UI helpers =================== */
 const INPUT_FOCUS =
   "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
 const SELECT_FOCUS = "focus:ring-2 focus:ring-secondary focus:border-secondary"
-
-// 👇 NUEVO: helpers de permisos
-function hasPerm(perms: string[] = [], required: string | string[]): boolean {
-  const list = Array.isArray(required) ? required : [required]
-  const set = new Set(perms.map(p => p.toLowerCase()))
-  return list.some(r => set.has(String(r).toLowerCase()))
-}
 
 /* =================== API base =================== */
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
@@ -67,8 +57,8 @@ interface SystemUser {
   id: string
   name: string
   email: string
-  role: UserRole
-  roleName: string
+  role: UserRole 
+  roleName: string  
   oficina: string
   permissions: string[]
   isActive: boolean
@@ -264,7 +254,9 @@ function toSystemUser(u: any): SystemUser {
 
   const rawPerms = u?.permisos ?? u?.permissions ?? u?.role?.permisos ?? u?.role?.permissions ?? []
   const permissions: string[] = Array.isArray(rawPerms)
-    ? rawPerms.map((p: any) => (typeof p === "string" ? p : p?.nombre ?? p?.name ?? null)).filter(Boolean)
+    ? rawPerms
+        .map((p: any) => (typeof p === "string" ? p : p?.nombre ?? p?.name ?? null))
+        .filter(Boolean)
     : []
 
   const isActive =
@@ -305,12 +297,36 @@ function genTempPassword() {
 
 /* =================== Tipos para roles (lista del backend) =================== */
 type ApiRole = {
-  uid?: string
-  id?: number
+  uid?: string 
+  id?: number  
   nombre?: string
   descripcion?: string
   is_active?: boolean
 }
+
+/* =================== Validaciones =================== */
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const hasUpper = (s: string) => /[A-Z]/.test(s)
+const hasDigit = (s: string) => /\d/.test(s)
+const hasSpecial = (s: string) => /[^A-Za-z0-9]/.test(s)
+const cleanPhone = (s: string) => s.replace(/\D+/g, "")
+const phoneOk = (s: string) => {
+  const d = cleanPhone(s)
+  return d.length >= 10 && d.length <= 15
+}
+
+type FormData = {
+  nombres: string
+  primer_apellido: string
+  segundo_apellido: string
+  correo: string
+  telefono: string
+  whatsapp: string
+  role: UserRole
+  isActive: boolean
+  password: string
+}
+type FormErrors = Partial<Record<keyof FormData, string>> & { roleUid?: string }
 
 /* =================== Componente =================== */
 export function UserManagement() {
@@ -334,15 +350,6 @@ export function UserManagement() {
 
   const { toast } = useToast()
 
-  // 👇 NUEVO: permisos del usuario autenticado
-  const { user: authUser } = useAuth()
-  const profilePerms: string[] = (authUser?.permissions as string[]) ?? []
-
-  // Flags de permisos para CTAs
-  const canCreateUser = useMemo(() => hasPerm(profilePerms, "crear_usuarios"), [profilePerms])
-  const canEditUser   = useMemo(() => hasPerm(profilePerms, "editar_usuarios"), [profilePerms])
-  const canDeleteUser = useMemo(() => hasPerm(profilePerms, "eliminar_usuarios"), [profilePerms])
-
   const filteredOffices = useMemo(() => {
     const q = officeSearch.trim().toLowerCase()
     if (!q) return offices
@@ -351,17 +358,86 @@ export function UserManagement() {
     )
   }, [officeSearch, offices])
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     nombres: "",
     primer_apellido: "",
     segundo_apellido: "",
     correo: "",
     telefono: "",
     whatsapp: "",
-    role: "agente" as UserRole,
+    role: "agente" as UserRole, 
     isActive: true,
     password: genTempPassword(),
   })
+  const [errors, setErrors] = useState<FormErrors>({})
+
+  /* ===== Validación de campos (live) ===== */
+  function validateField(name: keyof FormData, value: string): string | "" {
+    const v = value?.trim?.() ?? ""
+    switch (name) {
+      case "nombres":
+        if (!v) return "Ingresa el nombre."
+        if (v.length < 2) return "El nombre debe tener al menos 2 caracteres."
+        return ""
+      case "correo":
+        if (!v) return "Ingresa el correo."
+        if (!emailRe.test(v)) return "Correo inválido."
+        return ""
+      case "password": {
+        // En edición solo si el usuario escribe algo
+        if (editingUser && !v) return ""
+        if (v.length < 8) return "Mínimo 8 caracteres."
+        if (!hasUpper(v)) return "Debe incluir al menos 1 mayúscula."
+        if (!hasDigit(v)) return "Debe incluir al menos 1 número."
+        if (!hasSpecial(v)) return "Debe incluir al menos 1 carácter especial."
+        return ""
+      }
+      case "telefono":
+      case "whatsapp":
+        if (!v) return "" // opcional
+        if (!phoneOk(v)) return "Debe contener entre 10 y 15 dígitos."
+        return ""
+      case "primer_apellido":
+      case "segundo_apellido":
+        // opcionales, pero si se llenan que tengan algo razonable
+        if (!v) return ""
+        if (v.length < 2) return "Debe tener al menos 2 caracteres."
+        return ""
+      default:
+        return ""
+    }
+  }
+
+  function validateAll(): FormErrors {
+    const e: FormErrors = {}
+    ;(["nombres", "correo", "password", "telefono", "whatsapp", "primer_apellido", "segundo_apellido"] as (keyof FormData)[])
+      .forEach((k) => {
+        const msg = validateField(k, formData[k] as string)
+        if (msg) e[k] = msg
+      })
+
+    // rol: asegurar que resolvemos a role_id por uid o por nombre
+    const uidOk = selectedRoleUid ? typeof decodeRoleId(selectedRoleUid) === "number" : true
+    const nameOk = !!ROLE_ID_BY_ROLE[formData.role]
+    if (!uidOk && !nameOk) e.roleUid = "Selecciona un rol válido."
+
+    return e
+  }
+
+  const setAndValidate = (patch: Partial<FormData>) => {
+    setFormData((prev) => {
+      const next = { ...prev, ...patch }
+      const changedKeys = Object.keys(patch) as (keyof FormData)[]
+      const nextErrors: FormErrors = { ...errors }
+      for (const k of changedKeys) {
+        const msg = validateField(k, String((next as any)[k] ?? ""))
+        if (msg) nextErrors[k] = msg
+        else delete nextErrors[k]
+      }
+      setErrors(nextErrors)
+      return next
+    })
+  }
 
   function getToken() {
     return typeof window !== "undefined" ? localStorage.getItem("access_token") : null
@@ -441,6 +517,7 @@ export function UserManagement() {
       const list: ApiRole[] = Array.isArray(data) ? data : (data?.data ?? data?.result ?? [])
       setRoles(list)
 
+      // Si no hay selección todavía, intenta: 1) por formData.role (normalizado), 2) primer rol.
       if (!selectedRoleUid) {
         const normalized = (name?: string) => normalizeRoleToUserRole(name ?? "")
         const byName = list.find(r => normalized(r.nombre) === formData.role)
@@ -457,6 +534,7 @@ export function UserManagement() {
 
   useEffect(() => { fetchUsersFromApi() }, [])
 
+  // Al abrir el modal cargamos offices/roles si hace falta
   useEffect(() => {
     if (isDialogOpen) {
       if (offices.length === 0 && !officesLoading) fetchOfficesFromApi()
@@ -467,19 +545,17 @@ export function UserManagement() {
 
   /* ========== CRUD ==========\*/
   async function createUser() {
-    if (!canCreateUser) {
-      toast({ title: "Permiso requerido", description: "No puedes crear usuarios.", variant: "destructive" })
-      return
-    }
     setSubmitting(true)
     try {
       const token = getToken()
 
+      // role_id preferente desde uid (hashid) del dropdown:
       let role_id: number | undefined
       if (selectedRoleUid) {
         const n = decodeRoleId(selectedRoleUid)
         if (typeof n === "number" && n > 0) role_id = n
       }
+      // fallback por nombre (map estático)
       if (!role_id) role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
 
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
@@ -510,10 +586,6 @@ export function UserManagement() {
   }
 
   async function updateUser(userId: string) {
-    if (!canEditUser) {
-      toast({ title: "Permiso requerido", description: "No puedes editar usuarios.", variant: "destructive" })
-      return
-    }
     setSubmitting(true)
     try {
       const token = getToken()
@@ -552,11 +624,8 @@ export function UserManagement() {
   }
 
   const handleAddUser = () => {
-    if (!canCreateUser) {
-      toast({ title: "Permiso requerido", description: "No puedes crear usuarios.", variant: "destructive" })
-      return
-    }
     setEditingUser(null)
+    setErrors({})
     setFormData({
       nombres: "",
       primer_apellido: "",
@@ -575,10 +644,6 @@ export function UserManagement() {
   }
 
   const handleEditUser = async (user: SystemUser) => {
-    if (!canEditUser) {
-      toast({ title: "Permiso requerido", description: "No puedes editar usuarios.", variant: "destructive" })
-      return
-    }
     const parts = user.name.trim().split(/\s+/)
     let nombres = "", primer_apellido = "", segundo_apellido = ""
     if (parts.length >= 3) { segundo_apellido = parts.pop() as string; primer_apellido = parts.pop() as string; nombres = parts.join(" ") }
@@ -586,6 +651,7 @@ export function UserManagement() {
     else if (parts.length === 1) { nombres = parts[0] }
 
     setEditingUser(user)
+    setErrors({})
     setFormData({
       nombres, primer_apellido, segundo_apellido,
       correo: user.email, telefono: "", whatsapp: "",
@@ -614,9 +680,11 @@ export function UserManagement() {
           return curr
         })
 
+        // Preselecciona rol por uid si viene en detalle
         const roleUidFromDetail: string | null = u?.role?.uid ?? null
         if (roleUidFromDetail) setSelectedRoleUid(String(roleUidFromDetail))
         else {
+          // o por nombre si no vino uid
           const match = roles.find(r => (r.nombre ?? "").trim().toLowerCase() === (user.roleName ?? "").trim().toLowerCase())
           if (match?.uid) setSelectedRoleUid(match.uid)
         }
@@ -627,18 +695,17 @@ export function UserManagement() {
   }
 
   const handleSaveUser = () => {
-    if (!formData.nombres.trim() || !formData.correo.trim()) {
-      toast({ title: "Validación", description: "Nombre y correo son obligatorios." })
+    const e = validateAll()
+    setErrors(e)
+    if (Object.keys(e).length > 0) {
+      const first = e.nombres || e.correo || e.password || e.telefono || e.whatsapp || e.primer_apellido || e.segundo_apellido || e.roleUid || "Revisa los campos."
+      toast({ title: "Validación", description: first, variant: "destructive" })
       return
     }
     editingUser ? updateUser(editingUser.id) : createUser()
   }
 
   const handleDeleteUser = async (id: string) => {
-    if (!canDeleteUser) {
-      toast({ title: "Permiso requerido", description: "No puedes eliminar usuarios.", variant: "destructive" })
-      return
-    }
     const confirmar = typeof window !== "undefined" ? window.confirm("¿Eliminar este usuario? (soft delete)") : true
     if (!confirmar) return
     setSubmitting(true)
@@ -700,241 +767,298 @@ export function UserManagement() {
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Cargando..." : "Recargar"}
           </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={handleAddUser} className="bg-primary hover:bg-primary/90" disabled={submitting}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nuevo Usuario
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[900px] max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</DialogTitle>
+                <DialogDescription>
+                  {editingUser ? "Modifica los datos y oficinas del usuario" : "Completa la información para crear un nuevo usuario"}
+                </DialogDescription>
+              </DialogHeader>
 
-          {/* Nuevo Usuario (solo si tiene permiso) */}
-          {canCreateUser && (
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={handleAddUser} className="bg-primary hover:bg-primary/90" disabled={submitting}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Usuario
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[900px] max-h-[80vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</DialogTitle>
-                  <DialogDescription>
-                    {editingUser ? "Modifica los datos y oficinas del usuario" : "Completa la información para crear un nuevo usuario"}
-                  </DialogDescription>
-                </DialogHeader>
+              <div className="grid gap-4 py-4">
+                {/* nombre */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="nombres">Nombres</Label>
+                    <Input
+                      id="nombres"
+                      className={`${INPUT_FOCUS} ${errors.nombres ? "border-red-500" : ""}`}
+                      value={formData.nombres}
+                      onChange={(e) => setAndValidate({ nombres: e.target.value })}
+                      placeholder="Juan Carlos"
+                      aria-invalid={!!errors.nombres}
+                    />
+                    {errors.nombres && <p className="text-xs text-red-600">{errors.nombres}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="primer_apellido">Primer apellido</Label>
+                    <Input
+                      id="primer_apellido"
+                      className={`${INPUT_FOCUS} ${errors.primer_apellido ? "border-red-500" : ""}`}
+                      value={formData.primer_apellido}
+                      onChange={(e) => setAndValidate({ primer_apellido: e.target.value })}
+                      placeholder="Pérez"
+                      aria-invalid={!!errors.primer_apellido}
+                    />
+                    {errors.primer_apellido && <p className="text-xs text-red-600">{errors.primer_apellido}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="segundo_apellido">Segundo apellido</Label>
+                    <Input
+                      id="segundo_apellido"
+                      className={`${INPUT_FOCUS} ${errors.segundo_apellido ? "border-red-500" : ""}`}
+                      value={formData.segundo_apellido}
+                      onChange={(e) => setAndValidate({ segundo_apellido: e.target.value })}
+                      placeholder="García"
+                      aria-invalid={!!errors.segundo_apellido}
+                    />
+                    {errors.segundo_apellido && <p className="text-xs text-red-600">{errors.segundo_apellido}</p>}
+                  </div>
+                </div>
 
-                <div className="grid gap-4 py-4">
-                  {/* nombre */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="nombres">Nombres</Label>
-                      <Input id="nombres" className={INPUT_FOCUS} value={formData.nombres}
-                        onChange={(e) => setFormData({ ...formData, nombres: e.target.value })} placeholder="Juan Carlos" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="primer_apellido">Primer apellido</Label>
-                      <Input id="primer_apellido" className={INPUT_FOCUS} value={formData.primer_apellido}
-                        onChange={(e) => setFormData({ ...formData, primer_apellido: e.target.value })} placeholder="Pérez" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="segundo_apellido">Segundo apellido</Label>
-                      <Input id="segundo_apellido" className={INPUT_FOCUS} value={formData.segundo_apellido}
-                        onChange={(e) => setFormData({ ...formData, segundo_apellido: e.target.value })} placeholder="García" />
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="correo">Correo</Label>
+                    <Input
+                      id="correo"
+                      type="email"
+                      className={`${INPUT_FOCUS} ${errors.correo ? "border-red-500" : ""}`}
+                      value={formData.correo}
+                      onChange={(e) => setAndValidate({ correo: e.target.value })}
+                      placeholder="usuario@sigr.com"
+                      aria-invalid={!!errors.correo}
+                    />
+                    {errors.correo && <p className="text-xs text-red-600">{errors.correo}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="telefono">Teléfono</Label>
+                    <Input
+                      id="telefono"
+                      inputMode="tel"
+                      maxLength={15}
+                      className={`${INPUT_FOCUS} ${errors.telefono ? "border-red-500" : ""}`}
+                      value={formData.telefono}
+                      onChange={(e) => setAndValidate({ telefono: e.target.value })}
+                      placeholder="9512345678"
+                      aria-invalid={!!errors.telefono}
+                    />
+                    {errors.telefono && <p className="text-xs text-red-600">{errors.telefono}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="whatsapp">WhatsApp</Label>
+                    <Input
+                      id="whatsapp"
+                      inputMode="tel"
+                      maxLength={15}
+                      className={`${INPUT_FOCUS} ${errors.whatsapp ? "border-red-500" : ""}`}
+                      value={formData.whatsapp}
+                      onChange={(e) => setAndValidate({ whatsapp: e.target.value })}
+                      placeholder="9512345678"
+                      aria-invalid={!!errors.whatsapp}
+                    />
+                    {errors.whatsapp && <p className="text-xs text-red-600">{errors.whatsapp}</p>}
+                  </div>
+                </div>
+
+                {/* rol (desde API) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Rol</Label>
+                    <Select
+                      value={selectedRoleUid}
+                      onValueChange={(uid) => {
+                        setSelectedRoleUid(uid)
+                        const found = roles.find(r => (r.uid ?? String(r.id)) === uid)
+                        if (found?.nombre) {
+                          setAndValidate({ role: normalizeRoleToUserRole(found.nombre) })
+                        }
+                      }}
+                    >
+                      <SelectTrigger className={`${SELECT_FOCUS} ${errors.roleUid ? "border-red-500" : ""}`}>
+                        <SelectValue placeholder={rolesLoading ? "Cargando roles…" : "Selecciona un rol"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roles.length === 0 && !rolesLoading && (
+                          <div className="px-2 py-2 text-sm text-muted-foreground">Sin roles</div>
+                        )}
+                        {roles.map((r) => {
+                          const value = r.uid ?? String(r.id ?? "")
+                          const label = r.nombre ?? "(Sin nombre)"
+                          return (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                    {errors.roleUid && <p className="text-xs text-red-600">{errors.roleUid}</p>}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="correo">Correo</Label>
-                      <Input id="correo" type="email" className={INPUT_FOCUS} value={formData.correo}
-                        onChange={(e) => setFormData({ ...formData, correo: e.target.value })} placeholder="usuario@sigr.com" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="telefono">Teléfono</Label>
-                      <Input id="telefono" className={INPUT_FOCUS} value={formData.telefono}
-                        onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} placeholder="9512345678" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="whatsapp">WhatsApp</Label>
-                      <Input id="whatsapp" className={INPUT_FOCUS} value={formData.whatsapp}
-                        onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })} placeholder="9512345678" />
-                    </div>
-                  </div>
-
-                  {/* rol (desde API) */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="role">Rol</Label>
-                      <Select
-                        value={selectedRoleUid}
-                        onValueChange={(uid) => {
-                          setSelectedRoleUid(uid)
-                          const found = roles.find(r => (r.uid ?? String(r.id)) === uid)
-                          if (found?.nombre) {
-                            setFormData((fd) => ({ ...fd, role: normalizeRoleToUserRole(found.nombre) }))
-                          }
-                        }}
-                      >
-                        <SelectTrigger className={SELECT_FOCUS}>
-                          <SelectValue placeholder={rolesLoading ? "Cargando roles…" : "Selecciona un rol"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {roles.length === 0 && !rolesLoading && (
-                            <div className="px-2 py-2 text-sm text-muted-foreground">Sin roles</div>
-                          )}
-                          {roles.map((r) => {
-                            const value = r.uid ?? String(r.id ?? "")
-                            const label = r.nombre ?? "(Sin nombre)"
-                            return (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            )
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="isActive">Activo</Label>
-                      <div className="h-10 flex items-center">
-                        <Switch
-                          id="isActive"
-                          checked={formData.isActive}
-                          onCheckedChange={(v) => setFormData({ ...formData, isActive: !!v })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Password (temporal)</Label>
-                      <Input
-                        id="password"
-                        className={INPUT_FOCUS}
-                        type="text"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        placeholder="Se generó automáticamente"
+                  <div className="space-y-2">
+                    <Label htmlFor="isActive">Activo</Label>
+                    <div className="h-10 flex items-center">
+                      <Switch
+                        id="isActive"
+                        checked={formData.isActive}
+                        onCheckedChange={(v) => setFormData({ ...formData, isActive: !!v })}
                       />
                     </div>
                   </div>
 
-                  {/* oficinas - dropdown */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
-                        <Label>Oficinas</Label>
-                      </div>
-                    </div>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" className="w-full justify-between">
-                          <span className="truncate">
-                            {selectedOfficeIds.length > 0
-                              ? `${selectedOfficeIds.length} oficina${selectedOfficeIds.length > 1 ? "s" : ""} seleccionada${selectedOfficeIds.length > 1 ? "s" : ""}`
-                              : "Selecciona oficinas"}
-                          </span>
-                          <Building2 className="ml-2 h-4 w-4 opacity-60" />
-                        </Button>
-                      </DropdownMenuTrigger>
-
-                      <DropdownMenuContent className="w-[520px] p-0">
-                        <div className="sticky top-0 z-10 space-y-2 border-b bg-background p-3">
-                          <DropdownMenuLabel className="px-0">Selecciona oficinas</DropdownMenuLabel>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              className={INPUT_FOCUS}
-                              placeholder="Buscar por nombre/clave/ciudad/estado…"
-                              value={officeSearch}
-                              onChange={(e) => setOfficeSearch(e.target.value)}
-                            />
-                            <Button variant="outline" size="sm" onClick={fetchOfficesFromApi} disabled={officesLoading}>
-                              <RefreshCw className={`mr-2 h-3 w-3 ${officesLoading ? "animate-spin" : ""}`} />
-                              {officesLoading ? "Cargando…" : "Recargar"}
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button type="button" size="sm" variant="secondary" onClick={() => toggleAllFiltered(true)} disabled={officesLoading}>
-                              Seleccionar filtradas
-                            </Button>
-                            <Button type="button" size="sm" variant="ghost" onClick={() => toggleAllFiltered(false)} disabled={officesLoading}>
-                              Quitar filtradas
-                            </Button>
-                            <Button type="button" size="sm" variant="ghost" onClick={clearAllOffices} disabled={officesLoading}>
-                              Limpiar todo
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="max-h-72 overflow-auto p-2">
-                          {officesLoading ? (
-                            <p className="px-2 py-3 text-sm text-muted-foreground">Cargando oficinas…</p>
-                          ) : filteredOffices.length === 0 ? (
-                            <p className="px-2 py-3 text-sm text-muted-foreground">No se encontraron oficinas.</p>
-                          ) : (
-                            <ul className="space-y-1">
-                              {filteredOffices.map((o) => {
-                                const checked = isOfficeSelected(selectedOfficeIds, o.id)
-                                return (
-                                  <li key={String(o.id)}>
-                                    <DropdownMenuItem
-                                      onSelect={(e) => e.preventDefault()}
-                                      className="cursor-default data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground"
-                                    >
-                                      <label className="flex w-full items-center gap-2">
-                                        <Checkbox checked={checked} onCheckedChange={(v) => toggleOffice(o.id, !!v)} />
-                                        <span className="text-sm">
-                                          <span className="font-medium">{o.nombre}</span>
-                                          {o.clave ? <span className="text-muted-foreground"> · {o.clave}</span> : null}
-                                          {(o.ciudad || o.estado) ? (
-                                            <span className="text-muted-foreground">
-                                              {" "}· {o.ciudad ?? ""}{o.ciudad && o.estado ? ", " : ""}{o.estado ?? ""}
-                                            </span>
-                                          ) : null}
-                                        </span>
-                                      </label>
-                                    </DropdownMenuItem>
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                        </div>
-
-                        <DropdownMenuSeparator />
-                        <div className="flex flex-wrap gap-2 p-3">
-                          {selectedOfficeIds.length === 0 ? (
-                            <span className="text-xs text-muted-foreground">Ninguna seleccionada</span>
-                          ) : (
-                            selectedOfficeIds
-                              .map((id) => offices.find((o) => isOfficeSelected([id], o.id)))
-                              .filter(Boolean)
-                              .map((o) => (
-                                <span key={String((o as Office).id)} className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                                  {(o as Office).nombre}
-                                  <button
-                                    type="button"
-                                    className="ml-1 text-muted-foreground hover:text-foreground"
-                                    onClick={() => setSelectedOfficeIds((prev) => mergeOfficeIds(prev, (o as Office).id, false))}
-                                    aria-label={`Quitar ${(o as Office).nombre}`}
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))
-                          )}
-                        </div>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password {editingUser ? "(deja vacío para no cambiar)" : "(temporal)"}</Label>
+                    <Input
+                      id="password"
+                      className={`${INPUT_FOCUS} ${errors.password ? "border-red-500" : ""}`}
+                      type="text"
+                      value={formData.password}
+                      onChange={(e) => setAndValidate({ password: e.target.value })}
+                      placeholder={editingUser ? "Opcional" : "Se generó automáticamente"}
+                      aria-invalid={!!errors.password}
+                    />
+                    {errors.password ? (
+                      <p className="text-xs text-red-600">{errors.password}</p>
+                    ) : (
+                      !editingUser && (
+                        <ul className="text-xs text-muted-foreground list-disc ml-4">
+                          <li>8+ caracteres</li>
+                          <li>1 mayúscula</li>
+                          <li>1 número</li>
+                          <li>1 carácter especial</li>
+                        </ul>
+                      )
+                    )}
                   </div>
                 </div>
 
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-                  <Button onClick={handleSaveUser} disabled={submitting}>
-                    {submitting ? "Guardando..." : editingUser ? "Actualizar" : "Crear"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
+                {/* oficinas - dropdown */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                      <Label>Oficinas</Label>
+                    </div>
+                  </div>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" className="w-full justify-between">
+                        <span className="truncate">
+                          {selectedOfficeIds.length > 0
+                            ? `${selectedOfficeIds.length} oficina${selectedOfficeIds.length > 1 ? "s" : ""} seleccionada${selectedOfficeIds.length > 1 ? "s" : ""}`
+                            : "Selecciona oficinas"}
+                        </span>
+                        <Building2 className="ml-2 h-4 w-4 opacity-60" />
+                      </Button>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent className="w-[520px] p-0">
+                      <div className="sticky top-0 z-10 space-y-2 border-b bg-background p-3">
+                        <DropdownMenuLabel className="px-0">Selecciona oficinas</DropdownMenuLabel>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            className={INPUT_FOCUS}
+                            placeholder="Buscar por nombre/clave/ciudad/estado…"
+                            value={officeSearch}
+                            onChange={(e) => setOfficeSearch(e.target.value)}
+                          />
+                          <Button variant="outline" size="sm" onClick={fetchOfficesFromApi} disabled={officesLoading}>
+                            <RefreshCw className={`mr-2 h-3 w-3 ${officesLoading ? "animate-spin" : ""}`} />
+                            {officesLoading ? "Cargando…" : "Recargar"}
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" size="sm" variant="secondary" onClick={() => toggleAllFiltered(true)} disabled={officesLoading}>
+                            Seleccionar filtradas
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => toggleAllFiltered(false)} disabled={officesLoading}>
+                            Quitar filtradas
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={clearAllOffices} disabled={officesLoading}>
+                            Limpiar todo
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="max-h-72 overflow-auto p-2">
+                        {officesLoading ? (
+                          <p className="px-2 py-3 text-sm text-muted-foreground">Cargando oficinas…</p>
+                        ) : filteredOffices.length === 0 ? (
+                          <p className="px-2 py-3 text-sm text-muted-foreground">No se encontraron oficinas.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {filteredOffices.map((o) => {
+                              const checked = isOfficeSelected(selectedOfficeIds, o.id)
+                              return (
+                                <li key={String(o.id)}>
+                                  <DropdownMenuItem
+                                    onSelect={(e) => e.preventDefault()}
+                                    className="cursor-default data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground"
+                                  >
+                                    <label className="flex w-full items-center gap-2">
+                                      <Checkbox checked={checked} onCheckedChange={(v) => toggleOffice(o.id, !!v)} />
+                                      <span className="text-sm">
+                                        <span className="font-medium">{o.nombre}</span>
+                                        {o.clave ? <span className="text-muted-foreground"> · {o.clave}</span> : null}
+                                        {(o.ciudad || o.estado) ? (
+                                          <span className="text-muted-foreground">
+                                            {" "}· {o.ciudad ?? ""}{o.ciudad && o.estado ? ", " : ""}{o.estado ?? ""}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </label>
+                                  </DropdownMenuItem>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+                      </div>
+
+                      <DropdownMenuSeparator />
+                      <div className="flex flex-wrap gap-2 p-3">
+                        {selectedOfficeIds.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">Ninguna seleccionada</span>
+                        ) : (
+                          selectedOfficeIds
+                            .map((id) => offices.find((o) => isOfficeSelected([id], o.id)))
+                            .filter(Boolean)
+                            .map((o) => (
+                              <span key={String((o as Office).id)} className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+                                {(o as Office).nombre}
+                                <button
+                                  type="button"
+                                  className="ml-1 text-muted-foreground hover:text-foreground"
+                                  onClick={() => setSelectedOfficeIds((prev) => mergeOfficeIds(prev, (o as Office).id, false))}
+                                  aria-label={`Quitar ${(o as Office).nombre}`}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))
+                        )}
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+                <Button onClick={handleSaveUser} disabled={submitting}>
+                  {submitting ? "Guardando..." : editingUser ? "Actualizar" : "Crear"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -982,7 +1106,7 @@ export function UserManagement() {
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Correo</TableHead>
-                  <TableHead>Rol</TableHead>
+                  {/* <TableHead>Rol</TableHead> */}
                   <TableHead>Oficina(s)</TableHead>
                   <TableHead>Último acceso</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -1003,16 +1127,12 @@ export function UserManagement() {
                     <TableCell className="text-muted-foreground">{u.oficina || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{u.lastLogin}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      {canEditUser && (
-                        <Button variant="outline" size="sm" onClick={() => handleEditUser(u)}>
-                          <Edit className="h-4 w-4 mr-1" /> Editar
-                        </Button>
-                      )}
-                      {canDeleteUser && (
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
-                          <Trash2 className="h-4 w-4 mr-1" /> Eliminar
-                        </Button>
-                      )}
+                      <Button variant="outline" size="sm" onClick={() => handleEditUser(u)}>
+                        <Edit className="h-4 w-4 mr-1" /> Editar
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
+                        <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

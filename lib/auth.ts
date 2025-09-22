@@ -1,4 +1,3 @@
-// auth.ts
 "use client";
 
 import type { User, UserRole } from "@/types/auth";
@@ -152,6 +151,27 @@ function pickNormalizedUser(me: any, loginBody: any, accessToken: string | null)
   } as unknown as User;
 }
 
+type HttpErrorData = { message?: string | string[]; error?: string; statusCode?: number } & Record<string, any>;
+
+export class HttpError extends Error {
+  status?: number;
+  data?: HttpErrorData;
+  response?: { status?: number; data?: HttpErrorData }; 
+
+  constructor(status?: number, data?: HttpErrorData, message?: string) {
+    const msg =
+      message ??
+      (Array.isArray(data?.message) ? data?.message?.[0] : data?.message) ??
+      data?.error ??
+      (status ? `Error ${status}` : "HTTP error");
+    super(msg);
+    this.name = "HttpError";
+    this.status = status;
+    this.data = data;
+    this.response = { status, data }; 
+  }
+}
+
 let refreshingPromise: Promise<string | null> | null = null;
 async function refreshAccessTokenOnce(): Promise<string | null> {
   if (refreshingPromise) return refreshingPromise;
@@ -162,11 +182,10 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // IMPORTANTE: usa snake_case si tu backend lo espera así
-      body: JSON.stringify({ refresh_token: rt }),
+      body: JSON.stringify({ refresh_token: rt }), 
     });
     const body = await jsonOrText(res);
-    if (!res.ok) throw new Error(extractMessage(body, `Error ${res.status}`));
+    if (!res.ok) throw new HttpError(res.status, body as any);
 
     const newAccess =
       body?.access_token ?? body?.accessToken ?? body?.data?.access_token ?? body?.result?.access_token;
@@ -201,7 +220,6 @@ async function req<T = any>(
   const headers = new Headers(init.headers || {});
   if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
 
-  // mete Authorization si estamos en cliente y hay token
   if (!headers.has("Authorization") && isBrowser) {
     const t = readAccess();
     if (t) headers.set("Authorization", `Bearer ${t}`);
@@ -213,7 +231,7 @@ async function req<T = any>(
   try {
     const res = await fetch(url, {
       ...init,
-      credentials: "omit", // usamos Bearer, no cookies
+      credentials: "omit", 
       headers,
       signal: ac.signal,
     });
@@ -233,7 +251,7 @@ async function req<T = any>(
         });
         if (!retryRes.ok) {
           const body = await jsonOrText(retryRes);
-          throw new Error(extractMessage(body, `Error ${retryRes.status}`));
+          throw new HttpError(retryRes.status, body as any);
         }
         if (!expectJson) return undefined as unknown as T;
         const retryData = await jsonOrText(retryRes);
@@ -243,14 +261,16 @@ async function req<T = any>(
 
     if (!res.ok) {
       const body = await jsonOrText(res);
-      throw new Error(extractMessage(body, `Error ${res.status}`));
+      throw new HttpError(res.status, body as any);
     }
 
     if (!expectJson) return undefined as unknown as T;
     const data = await jsonOrText(res);
     return data as T;
   } catch (err: any) {
-    if (err?.name === "AbortError") throw new Error("La solicitud tardó demasiado. Intenta de nuevo.");
+    if (err?.name === "AbortError") {
+      throw new HttpError(408, { error: "timeout" }, "timeout");
+    }
     throw err;
   } finally {
     clearTimeout(to);
@@ -268,7 +288,6 @@ type LoginResponse = {
   token_type?: "Bearer";
 } & Record<string, any>;
 
-// Guarda token ANTES de /auth/profile y evita SSR
 export async function authenticateUser(email: string, password: string): Promise<User | null> {
   const loginBody = await req<LoginResponse>(
     "/auth/login",
@@ -290,20 +309,19 @@ export async function authenticateUser(email: string, password: string): Promise
 
   if (typeof access !== "string" || !access) {
     console.error("Login sin access token. Claves recibidas:", Object.keys(loginBody || {}));
-    throw new Error("El backend no devolvió access_token");
+    throw new HttpError(500, loginBody as any, "El backend no devolvió access_token");
   }
 
   setAccess(access);
   if (typeof refresh === "string" && refresh) setRefresh(refresh);
 
-  if (!isBrowser) return null; // evita pedir perfil en SSR
+  if (!isBrowser) return null; 
 
   const meRaw = await req<any>("/auth/profile", {}, { retryOn401: false });
   const user = pickNormalizedUser(meRaw, loginBody, access);
   return user ?? null;
 }
 
-// Solo cliente; pre-refresca si falta token o está vencido
 export async function fetchProfile(): Promise<User | null> {
   if (!isBrowser) return null;
 
@@ -316,7 +334,6 @@ export async function fetchProfile(): Promise<User | null> {
   }
 
   try {
-    // ya con token fresco, NO reintentes aquí
     const meRaw = await req<any>("/auth/profile", {}, { retryOn401: false });
     const user = pickNormalizedUser(meRaw, null, token);
     return user ?? null;

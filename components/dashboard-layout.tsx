@@ -58,7 +58,7 @@ type MenuItem = {
   icon: React.ComponentType<{ className?: string }>
   label: string
   href: string
-  requires?: string[]        // undefined => siempre visible
+  requires?: string[]  
 }
 const MENU_CATALOG: MenuItem[] = [
   { icon: BarChart3, label: "Dashboard", href: "/dashboard" },
@@ -66,7 +66,7 @@ const MENU_CATALOG: MenuItem[] = [
   { icon: Settings, label: "Admin", href: "/admin", requires: ["configuracion_sistema"] },
   // { icon: CreditCard, label: "Centro de Pagos", href: "/pagos", requires: ["pagos.ver", "pagos.listar"] },
   // { icon: Users, label: "Interesados", href: "/interesados", requires: ["interesados.ver", "interesados.listar", "ver_propiedades"] },
-  { icon: Home, label: "Mis Rentas", href: "/rentas", requires: ["rentas.ver", "rentas.listar"] },
+  { icon: Home, label: "Mis Rentas", href: "/rentas", requires: ["ver_rentas"] },
   // { icon: RotateCcw, label: "Renovaciones", href: "/renovaciones", requires: ["rentas.editar", "rentas.ver"] },
   // { icon: Building2, label: "Administraciones", href: "/administraciones", requires: ["oficinas.listar", "ver_oficinas", "ver_propiedades"] },
   // { icon: User, label: "Usuarios", href: "/usuarios", requires: ["usuarios.listar", "ver_usuarios"] },
@@ -100,9 +100,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [profile, setProfile] = useState<ApiProfile | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
 
-  /** Cargar /auth/profile desde el endpoint */
   useEffect(() => {
-    let mounted = true
+    const ac = new AbortController()
     ;(async () => {
       try {
         setLoadingProfile(true)
@@ -110,20 +109,31 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         const res = await fetch(`${BASE}/auth/profile`, {
           headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           cache: "no-store",
+          signal: ac.signal,
         })
-        const text = await res.text()
-        if (!res.ok) throw new Error(text || `Error ${res.status}`)
-        const data: ApiProfile = JSON.parse(text)
-        if (mounted) setProfile(data)
+        if (res.status === 401) {
+          setProfile(null)
+          logout()
+          router.push("/")
+          return
+        }
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(text || `Error ${res.status}`)
+        }
+        const data: ApiProfile = await res.json()
+        setProfile(data)
       } catch (e) {
-        console.error("auth/profile error:", e)
-        if (mounted) setProfile(null)
+        if (!ac.signal.aborted) {
+          console.error("auth/profile error:", e)
+          setProfile(null)
+        }
       } finally {
-        if (mounted) setLoadingProfile(false)
+        if (!ac.signal.aborted) setLoadingProfile(false)
       }
     })()
-    return () => { mounted = false }
-  }, [])
+    return () => ac.abort()
+  }, [logout, router])
 
   /** Derivados de perfil */
   const displayName = useMemo(() => {
@@ -134,24 +144,22 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const initial = (displayName?.charAt(0) ?? "?").toUpperCase()
   const officeName = useMemo(() => officeDisplay(profile?.office ?? profile?.oficina), [profile])
 
-  // Mostrar EXACTAMENTE lo que responde la API
   const roleLabel = useMemo(() => {
     if (!profile) return ""
     return roleNameFrom(profile.role)
   }, [profile])
 
-  /** Filtrado del menú */
   const filteredMenuItems = useMemo(() => {
     if (!profile) {
       return MENU_CATALOG.filter(i => !i.requires)
     }
+
     const perms = new Set((profile.permissions ?? []).map(p => String(p).trim().toLowerCase()))
-    const isAdminLite = perms.has("configuracion_sistema")
     const adminByRole = isAdminRole(profile.role)
 
     const can = (requires?: string[]) => {
       if (!requires || requires.length === 0) return true
-      if (adminByRole || isAdminLite) return true
+      if (adminByRole) return true 
       return requires.some(req => perms.has(req.trim().toLowerCase()))
     }
 
@@ -256,7 +264,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <div className="lg:pl-64">
         {/* Top bar */}
         <div className="sticky top-0 z-30 flex h-16 items-center gap-x-4 border-b border-border bg-background px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
-          <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
+          <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú lateral" aria-expanded={sidebarOpen}>
             <Menu className="h-5 w-5" />
           </Button>
 
