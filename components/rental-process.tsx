@@ -66,7 +66,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
             <CardContent className="space-y-4">
               <div className="flex items-center space-x-4">
                 <Label>Tipo de Persona:</Label>
-                <Select value={rental.inquilino.type}>
+                <Select value={rental.inquilino.type} disabled>
                   <SelectTrigger className="w-48">
                     <SelectValue />
                   </SelectTrigger>
@@ -81,38 +81,38 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Nombre Completo</Label>
-                    <Input value={rental.inquilino.nombre || ""} />
+                    <Input value={rental.inquilino.nombre || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Teléfono</Label>
-                    <Input value={rental.inquilino.telefono || ""} />
+                    <Input value={rental.inquilino.telefono || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Correo Electrónico</Label>
-                    <Input value={rental.inquilino.correo || ""} />
+                    <Input value={rental.inquilino.correo || ""} readOnly />
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Razón Social</Label>
-                    <Input value={rental.inquilino.razonSocial || ""} />
+                    <Input value={rental.inquilino.razonSocial || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Nombre Comercial</Label>
-                    <Input value={rental.inquilino.nombreComercial || ""} />
+                    <Input value={rental.inquilino.nombreComercial || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Representante Legal</Label>
-                    <Input value={rental.inquilino.representante || ""} />
+                    <Input value={rental.inquilino.representante || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Teléfono</Label>
-                    <Input value={rental.inquilino.telefono || ""} />
+                    <Input value={rental.inquilino.telefono || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Correo Electrónico</Label>
-                    <Input value={rental.inquilino.correo || ""} />
+                    <Input value={rental.inquilino.correo || ""} readOnly />
                   </div>
                 </div>
               )}
@@ -144,7 +144,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                 <>
                   <div className="flex items-center space-x-4">
                     <Label>Tipo de Persona:</Label>
-                    <Select value={rental.obligadoSolidario.type}>
+                    <Select value={rental.obligadoSolidario.type} disabled>
                       <SelectTrigger className="w-48">
                         <SelectValue />
                       </SelectTrigger>
@@ -158,15 +158,15 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Nombre Completo</Label>
-                      <Input value={rental.obligadoSolidario.nombre || ""} />
+                      <Input value={rental.obligadoSolidario.nombre || ""} readOnly />
                     </div>
                     <div className="space-y-2">
                       <Label>Teléfono</Label>
-                      <Input value={rental.obligadoSolidario.telefono || ""} />
+                      <Input value={rental.obligadoSolidario.telefono || ""} readOnly />
                     </div>
                     <div className="space-y-2">
                       <Label>Correo Electrónico</Label>
-                      <Input value={rental.obligadoSolidario.correo || ""} />
+                      <Input value={rental.obligadoSolidario.correo || ""} readOnly />
                     </div>
                   </div>
 
@@ -202,7 +202,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
             <CardContent className="space-y-4">
               <div className="flex items-center space-x-4">
                 <Label>Tipo de Persona:</Label>
-                <Select value={rental.propietario.type}>
+                <Select value={rental.propietario.type} disabled>
                   <SelectTrigger className="w-48">
                     <SelectValue />
                   </SelectTrigger>
@@ -216,15 +216,15 @@ export function RentalProcess({ rental }: RentalProcessProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Nombre Completo</Label>
-                  <Input value={rental.propietario.nombre || ""} />
+                  <Input value={rental.propietario.nombre || ""} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Teléfono</Label>
-                  <Input value={rental.propietario.telefono || ""} />
+                  <Input value={rental.propietario.telefono || ""} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Correo Electrónico</Label>
-                  <Input value={rental.propietario.correo || ""} />
+                  <Input value={rental.propietario.correo || ""} readOnly />
                 </div>
               </div>
 
@@ -254,49 +254,49 @@ export function RentalProcess({ rental }: RentalProcessProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Tipo de Propiedad</Label>
-                  <Input value={rental.propiedad.tipo} />
+                  <Input value={rental.propiedad.tipo} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Código Postal</Label>
-                  <Input value={rental.propiedad.cp} />
+                  <Input value={rental.propiedad.cp} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Estado</Label>
-                  <Input value={rental.propiedad.estado} />
+                  <Input value={rental.propiedad.estado} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Ciudad</Label>
-                  <Input value={rental.propiedad.ciudad} />
+                  <Input value={rental.propiedad.ciudad} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Colonia</Label>
-                  <Input value={rental.propiedad.colonia} />
+                  <Input value={rental.propiedad.colonia} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Calle</Label>
-                  <Input value={rental.propiedad.calle} />
+                  <Input value={rental.propiedad.calle} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Número</Label>
-                  <Input value={rental.propiedad.numero} />
+                  <Input value={rental.propiedad.numero} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Interior</Label>
-                  <Input value={rental.propiedad.interior || ""} />
+                  <Input value={rental.propiedad.interior || ""} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Metros Cuadrados</Label>
-                  <Input type="number" value={rental.propiedad.metros} />
+                  <Input type="number" value={rental.propiedad.metros} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Renta Mensual</Label>
-                  <Input type="number" value={rental.propiedad.renta} />
+                  <Input type="number" value={rental.propiedad.renta} readOnly />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label>Referencias</Label>
-                <Textarea value={rental.propiedad.referencia || ""} placeholder="Referencias adicionales..." />
+                <Textarea value={rental.propiedad.referencia || ""} readOnly />
               </div>
 
               <Separator />
@@ -512,15 +512,15 @@ export function RentalProcess({ rental }: RentalProcessProps) {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Fecha de Inicio de Renta</Label>
-                  <Input type="date" value={rental.formalizacion?.fechaInicio || ""} />
+                  <Input type="date" value={rental.formalizacion?.fechaInicio || ""} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Fecha Fin de Renta</Label>
-                  <Input type="date" value={rental.formalizacion?.fechaFin || ""} />
+                  <Input type="date" value={rental.formalizacion?.fechaFin || ""} readOnly />
                 </div>
                 <div className="space-y-2">
                   <Label>Fecha Prevista de Firma</Label>
-                  <Input type="date" value={rental.formalizacion?.fechaFirma || ""} />
+                  <Input type="date" value={rental.formalizacion?.fechaFirma || ""} readOnly />
                 </div>
               </div>
 
@@ -531,7 +531,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="space-y-2">
                     <Label>Oficina</Label>
-                    <Select>
+                    <Select disabled>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar oficina" />
                       </SelectTrigger>
@@ -544,7 +544,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                   </div>
                   <div className="space-y-2">
                     <Label>Abogado</Label>
-                    <Select>
+                    <Select disabled>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar abogado" />
                       </SelectTrigger>
@@ -556,7 +556,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                   </div>
                   <div className="space-y-2">
                     <Label>Producto</Label>
-                    <Select>
+                    <Select disabled>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar producto" />
                       </SelectTrigger>
@@ -587,27 +587,27 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>Fecha de Inicio</Label>
-                    <Input type="date" value={rental.activacion?.fechaInicio || ""} />
+                    <Input type="date" value={rental.activacion?.fechaInicio || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Plazo del Contrato (meses)</Label>
-                    <Input type="number" value={rental.activacion?.plazoMeses || ""} />
+                    <Input type="number" value={rental.activacion?.plazoMeses || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Fecha de Fin</Label>
-                    <Input type="date" value={rental.activacion?.fechaFin || ""} />
+                    <Input type="date" value={rental.activacion?.fechaFin || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Monto de la Renta</Label>
-                    <Input type="number" value={rental.activacion?.montoRenta || ""} />
+                    <Input type="number" value={rental.activacion?.montoRenta || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Monto de la Comisión</Label>
-                    <Input type="number" value={rental.activacion?.montoComision || ""} />
+                    <Input type="number" value={rental.activacion?.montoComision || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Tipo de Comisión</Label>
-                    <Select value={rental.activacion?.tipoComision || ""}>
+                    <Select value={rental.activacion?.tipoComision || ""} disabled>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -619,11 +619,11 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                   </div>
                   <div className="space-y-2">
                     <Label>Monto Neto de Comisión</Label>
-                    <Input type="number" value={rental.activacion?.montoNetoComision || ""} />
+                    <Input type="number" value={rental.activacion?.montoNetoComision || ""} readOnly />
                   </div>
                   <div className="space-y-2">
                     <Label>Forma de Cobro</Label>
-                    <Select value={rental.activacion?.formaCobroComision || ""}>
+                    <Select value={rental.activacion?.formaCobroComision || ""} disabled>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
