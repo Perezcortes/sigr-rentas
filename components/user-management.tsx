@@ -57,8 +57,8 @@ interface SystemUser {
   id: string
   name: string
   email: string
-  role: UserRole 
-  roleName: string  
+  role: UserRole
+  roleName: string
   oficina: string
   permissions: string[]
   isActive: boolean
@@ -297,8 +297,8 @@ function genTempPassword() {
 
 /* =================== Tipos para roles (lista del backend) =================== */
 type ApiRole = {
-  uid?: string 
-  id?: number  
+  uid?: string
+  id?: number
   nombre?: string
   descripcion?: string
   is_active?: boolean
@@ -328,6 +328,28 @@ type FormData = {
 }
 type FormErrors = Partial<Record<keyof FormData, string>> & { roleUid?: string }
 
+/* =================== Helper clave: role_id numérico =================== */
+function ensureNumericRoleId(
+  selectedRoleId: number | undefined,
+  selectedRoleUid: string | undefined,
+  formRole: UserRole,
+  roles: ApiRole[],
+): number {
+  if (typeof selectedRoleId === "number" && Number.isFinite(selectedRoleId)) return selectedRoleId
+
+  if (selectedRoleUid) {
+    const found = roles.find(r => (r.uid ?? String(r.id)) === selectedRoleUid)
+    if (typeof found?.id === "number" && Number.isFinite(found.id)) return found.id
+    const dec = decodeRoleId(selectedRoleUid)
+    if (typeof dec === "number" && Number.isFinite(dec)) return dec
+  }
+
+  const fallback = ROLE_ID_BY_ROLE[formRole]
+  if (typeof fallback === "number" && Number.isFinite(fallback)) return fallback
+
+  throw new Error("No se pudo determinar un role_id numérico válido")
+}
+
 /* =================== Componente =================== */
 export function UserManagement() {
   const [users, setUsers] = useState<SystemUser[]>([])
@@ -347,6 +369,7 @@ export function UserManagement() {
   const [roles, setRoles] = useState<ApiRole[]>([])
   const [rolesLoading, setRolesLoading] = useState(false)
   const [selectedRoleUid, setSelectedRoleUid] = useState<string | undefined>(undefined)
+  const [selectedRoleId, setSelectedRoleId] = useState<number | undefined>(undefined) // << clave
 
   const { toast } = useToast()
 
@@ -365,7 +388,7 @@ export function UserManagement() {
     correo: "",
     telefono: "",
     whatsapp: "",
-    role: "agente" as UserRole, 
+    role: "agente",
     isActive: true,
     password: genTempPassword(),
   })
@@ -384,7 +407,6 @@ export function UserManagement() {
         if (!emailRe.test(v)) return "Correo inválido."
         return ""
       case "password": {
-        // En edición solo si el usuario escribe algo
         if (editingUser && !v) return ""
         if (v.length < 8) return "Mínimo 8 caracteres."
         if (!hasUpper(v)) return "Debe incluir al menos 1 mayúscula."
@@ -394,12 +416,11 @@ export function UserManagement() {
       }
       case "telefono":
       case "whatsapp":
-        if (!v) return "" // opcional
+        if (!v) return ""
         if (!phoneOk(v)) return "Debe contener entre 10 y 15 dígitos."
         return ""
       case "primer_apellido":
       case "segundo_apellido":
-        // opcionales, pero si se llenan que tengan algo razonable
         if (!v) return ""
         if (v.length < 2) return "Debe tener al menos 2 caracteres."
         return ""
@@ -410,17 +431,16 @@ export function UserManagement() {
 
   function validateAll(): FormErrors {
     const e: FormErrors = {}
-    ;(["nombres", "correo", "password", "telefono", "whatsapp", "primer_apellido", "segundo_apellido"] as (keyof FormData)[])
+    ;(["nombres","correo","password","telefono","whatsapp","primer_apellido","segundo_apellido"] as (keyof FormData)[])
       .forEach((k) => {
         const msg = validateField(k, formData[k] as string)
         if (msg) e[k] = msg
       })
-
-    // rol: asegurar que resolvemos a role_id por uid o por nombre
-    const uidOk = selectedRoleUid ? typeof decodeRoleId(selectedRoleUid) === "number" : true
-    const nameOk = !!ROLE_ID_BY_ROLE[formData.role]
-    if (!uidOk && !nameOk) e.roleUid = "Selecciona un rol válido."
-
+    try {
+      ensureNumericRoleId(selectedRoleId, selectedRoleUid, formData.role, roles)
+    } catch {
+      e.roleUid = "Selecciona un rol válido."
+    }
     return e
   }
 
@@ -517,12 +537,18 @@ export function UserManagement() {
       const list: ApiRole[] = Array.isArray(data) ? data : (data?.data ?? data?.result ?? [])
       setRoles(list)
 
-      // Si no hay selección todavía, intenta: 1) por formData.role (normalizado), 2) primer rol.
+      // Sin selección previa: intenta por nombre normalizado del form, o el primero.
       if (!selectedRoleUid) {
         const normalized = (name?: string) => normalizeRoleToUserRole(name ?? "")
         const byName = list.find(r => normalized(r.nombre) === formData.role)
-        if (byName?.uid) setSelectedRoleUid(byName.uid)
-        else if (list[0]?.uid) setSelectedRoleUid(list[0].uid!)
+        const chosen = byName ?? list[0]
+        if (chosen) {
+          setSelectedRoleUid(chosen.uid ?? String(chosen.id ?? ""))
+          if (chosen.id != null) setSelectedRoleId(chosen.id)
+        }
+      } else {
+        const f = list.find(r => (r.uid ?? String(r.id)) === selectedRoleUid)
+        if (f?.id != null) setSelectedRoleId(f.id)
       }
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "No se pudieron cargar los roles", variant: "destructive" })
@@ -549,14 +575,7 @@ export function UserManagement() {
     try {
       const token = getToken()
 
-      // role_id preferente desde uid (hashid) del dropdown:
-      let role_id: number | undefined
-      if (selectedRoleUid) {
-        const n = decodeRoleId(selectedRoleUid)
-        if (typeof n === "number" && n > 0) role_id = n
-      }
-      // fallback por nombre (map estático)
-      if (!role_id) role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
+      const role_id = ensureNumericRoleId(selectedRoleId, selectedRoleUid, formData.role, roles)
 
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
       const payload: any = {
@@ -565,7 +584,7 @@ export function UserManagement() {
         segundo_apellido: formData.segundo_apellido,
         correo: formData.correo,
         password: formData.password,
-        role_id,
+        role_id, // siempre número
         telefono: formData.telefono || undefined,
         whatsapp: formData.whatsapp || undefined,
         offices: numericOfficeIds.map((id) => ({ id })),
@@ -589,12 +608,8 @@ export function UserManagement() {
     setSubmitting(true)
     try {
       const token = getToken()
-      let role_id: number | undefined
-      if (selectedRoleUid) {
-        const n = decodeRoleId(selectedRoleUid)
-        if (typeof n === "number" && n > 0) role_id = n
-      }
-      if (!role_id) role_id = ROLE_ID_BY_ROLE[formData.role] ?? 4
+
+      const role_id = ensureNumericRoleId(selectedRoleId, selectedRoleUid, formData.role, roles)
 
       const numericOfficeIds = ensureNumericOfficeIds(selectedOfficeIds)
       const payload: any = {
@@ -602,7 +617,7 @@ export function UserManagement() {
         primer_apellido: formData.primer_apellido,
         segundo_apellido: formData.segundo_apellido,
         correo: formData.correo,
-        role_id,
+        role_id, // siempre número
         telefono: formData.telefono || undefined,
         whatsapp: formData.whatsapp || undefined,
         offices: numericOfficeIds.map((id) => ({ id })),
@@ -640,6 +655,7 @@ export function UserManagement() {
     setSelectedOfficeIds([])
     setOfficeSearch("")
     setSelectedRoleUid(undefined)
+    setSelectedRoleId(undefined)
     setIsDialogOpen(true)
   }
 
@@ -680,13 +696,20 @@ export function UserManagement() {
           return curr
         })
 
-        // Preselecciona rol por uid si viene en detalle
+        // Preselección de rol desde detalle
         const roleUidFromDetail: string | null = u?.role?.uid ?? null
+        const roleIdFromDetail: number | null = typeof u?.role?.id === "number" ? u.role.id : null
+
         if (roleUidFromDetail) setSelectedRoleUid(String(roleUidFromDetail))
+        if (roleIdFromDetail != null) setSelectedRoleId(roleIdFromDetail)
         else {
-          // o por nombre si no vino uid
-          const match = roles.find(r => (r.nombre ?? "").trim().toLowerCase() === (user.roleName ?? "").trim().toLowerCase())
-          if (match?.uid) setSelectedRoleUid(match.uid)
+          const match = roles.find(r =>
+            (r.nombre ?? "").trim().toLowerCase() === (user.roleName ?? "").trim().toLowerCase()
+          )
+          if (match) {
+            setSelectedRoleUid(match.uid ?? String(match.id ?? ""))
+            if (match.id != null) setSelectedRoleId(match.id)
+          }
         }
       }
     } catch {
@@ -876,10 +899,10 @@ export function UserManagement() {
                       onValueChange={(uid) => {
                         setSelectedRoleUid(uid)
                         const found = roles.find(r => (r.uid ?? String(r.id)) === uid)
-                        if (found?.nombre) {
-                          setAndValidate({ role: normalizeRoleToUserRole(found.nombre) })
-                        }
+                        setSelectedRoleId(typeof found?.id === "number" ? found.id : undefined)
+                        if (found?.nombre) setAndValidate({ role: normalizeRoleToUserRole(found.nombre) })
                       }}
+                      disabled={rolesLoading || roles.length === 0}
                     >
                       <SelectTrigger className={`${SELECT_FOCUS} ${errors.roleUid ? "border-red-500" : ""}`}>
                         <SelectValue placeholder={rolesLoading ? "Cargando roles…" : "Selecciona un rol"} />
@@ -1106,7 +1129,7 @@ export function UserManagement() {
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Correo</TableHead>
-                  {/* <TableHead>Rol</TableHead> */}
+                  <TableHead>Rol</TableHead>
                   <TableHead>Oficina(s)</TableHead>
                   <TableHead>Último acceso</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
