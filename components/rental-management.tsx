@@ -17,12 +17,28 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Plus, Search, Eye, Edit, Home, Calendar, DollarSign, FileText, RefreshCw } from "lucide-react"
+import {
+  Plus,
+  Search,
+  Eye,
+  Edit,
+  Home,
+  Calendar,
+  DollarSign,
+  FileText,
+  RefreshCw,
+  UserRound,
+  Building2,
+  Handshake,
+  ClipboardCheck,
+  Check,
+} from "lucide-react"
 import type { Rental, RentalStatus } from "@/types/rental"
 import { RentalProcess } from "@/components/rental-process"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/contexts/auth-context"
 import { api } from "@/lib/auth"
+import type { LucideIcon } from "lucide-react"
 
 /* ───────────────────────────────
    Helpers / Tipos
@@ -649,6 +665,60 @@ export function RentalManagement() {
   const canCreate = userPerms.includes("crear_rentas")
   const canView = userPerms.includes("ver_rentas")
 
+  type ManualStepItem = {
+    index: number
+    label: string
+    description: string
+    icon: LucideIcon
+    optional?: boolean
+    disabled?: boolean
+  }
+
+  const manualSteps = useMemo<ManualStepItem[]>(() => {
+    const steps: ManualStepItem[] = [
+      { index: 0, label: "Inquilino", description: "Datos del solicitante principal", icon: UserRound },
+      { index: 1, label: "Propietario", description: "Identificación del dueño", icon: Building2 },
+      { index: 2, label: "Propiedad", description: "Características del inmueble", icon: Home },
+    ]
+
+    steps.push({
+      index: 3,
+      label: "Obligado solidario",
+      description: manualForm.incluirObligado ? "Captura los datos del obligado" : "Puedes omitir si no aplica",
+      icon: Handshake,
+      optional: true,
+      disabled: !manualForm.incluirObligado,
+    })
+
+    steps.push({
+      index: 4,
+      label: "Resumen",
+      description: "Confirma la información antes de crear la renta",
+      icon: ClipboardCheck,
+    })
+
+    return steps
+  }, [manualForm.incluirObligado])
+
+  const enabledManualSteps = useMemo(() => manualSteps.filter((item) => !item.disabled), [manualSteps])
+
+  const currentManualStepIndex = useMemo(() => {
+    const exact = enabledManualSteps.findIndex((item) => item.index === step)
+    if (exact !== -1) return exact
+    if (!manualForm.incluirObligado && step === 3) {
+      const summaryIdx = enabledManualSteps.findIndex((item) => item.index === 4)
+      return summaryIdx !== -1 ? summaryIdx : enabledManualSteps.length - 1
+    }
+    if (step > 3) {
+      const summaryIdx = enabledManualSteps.findIndex((item) => item.index === 4)
+      return summaryIdx !== -1 ? summaryIdx : enabledManualSteps.length - 1
+    }
+    return Math.max(0, Math.min(enabledManualSteps.length - 1, step))
+  }, [enabledManualSteps, manualForm.incluirObligado, step])
+
+  const displayedStepNumber = currentManualStepIndex + 1
+  const totalManualSteps = enabledManualSteps.length
+
   const statusLabels: Record<RentalStatus, string> = {
     apartada: "Apartada",
     en_proceso: "En Proceso",
@@ -754,6 +824,9 @@ export function RentalManagement() {
   }, [])
   const toggleObligado = useCallback((v: boolean) => {
     setManualForm((f) => ({ ...f, incluirObligado: v }))
+    if (!v) {
+      setStep((current) => (current === 3 ? 4 : current))
+    }
   }, [])
 
   function nextStep() {
@@ -888,19 +961,33 @@ export function RentalManagement() {
                   </Button>
                 </DialogTrigger>
 
-                <DialogContent className="sm:max-w-[820px] max-h[90vh] overflow-y-auto">
+                <DialogContent className="sm:max-w-[860px] max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Nuevo Proceso de Renta</DialogTitle>
                     <DialogDescription>
-                      {mode === "menu" ? "Selecciona cómo deseas iniciar el proceso" : "Completa los pasos para crear una renta manual"}
+                      {mode === "menu"
+                        ? "Elige cómo deseas iniciar el proceso de renta"
+                        : "Sigue el asistente paso a paso para registrar una renta manual"}
                     </DialogDescription>
                   </DialogHeader>
 
                   {mode === "menu" ? (
                     <div className="grid gap-4 py-4">
-                      <Button variant="outline" className="h-auto p-4 flex flex-col items-start space-y-2 bg-transparent">
-                        <div className="font-semibold">Desde Oportunidad</div>
-                        <div className="text-sm text-muted-foreground">Crear proceso desde un interesado existente</div>
+                      <Button
+                        variant="secondary"
+                        disabled
+                        className="relative flex h-auto w-full flex-col items-start space-y-2 rounded-xl border border-dashed border-muted p-5 text-left"
+                      >
+                        <span className="inline-flex items-center gap-2 text-sm font-semibold">
+                          <FileText className="h-4 w-4" />
+                          Desde oportunidad
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          Conecta un interesado existente y continúa el proceso desde su expediente.
+                        </span>
+                        <span className="absolute right-4 top-4 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Próximamente
+                        </span>
                       </Button>
 
                       <Button
@@ -913,120 +1000,163 @@ export function RentalManagement() {
                             creadoPorUserId: (user as any)?.id ?? (user as any)?.userId ?? 1,
                           }))
                         }}
-                        className="h-auto p-4 flex flex-col items-start space-y-2 bg-transparent"
+                        className="flex h-auto w-full flex-col items-start space-y-2 rounded-xl border border-primary/40 bg-primary/5 p-5 text-left hover:bg-primary/10"
                       >
-                        <div className="font-semibold">Proceso Manual</div>
-                        <div className="text-sm text-muted-foreground">Crear proceso completamente nuevo</div>
+                        <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                          <Plus className="h-4 w-4" />
+                          Crear proceso manual
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          Registra desde cero los datos del inquilino, propietario, propiedad y obligado solidario.
+                        </span>
                       </Button>
                     </div>
                   ) : (
-                    <div className="grid gap-6">
-                      {/* Stepper */}
-                      <div className="flex items-center gap-2 text-sm flex-wrap">
-                        {(["Inquilino","Propietario","Propiedad","Obligado","Resumen"] as const).map((label, i) => {
-                          if (i === 3 && !manualForm.incluirObligado) return null
-                          const active = i === step
-                          const passed = i < step && (i !== 3 || manualForm.incluirObligado)
-                          return (
-                            <div key={i} className="flex items-center">
-                              <div className={`px-2 py-1 rounded ${active ? "bg-secondary text-foreground" : passed ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"}`}>
-                                {i + 1}. {label}
+                    <div className="grid gap-6 md:grid-cols-[240px_1fr]">
+                      <aside className="space-y-4">
+                        <div className="rounded-xl border bg-background p-4 shadow-sm">
+                          <div className="flex items-center justify-between text-xs font-medium uppercase text-muted-foreground">
+                            <span>Progreso</span>
+                            <span className="text-foreground">Paso {displayedStepNumber} de {totalManualSteps}</span>
+                          </div>
+                          <div className="mt-4 space-y-3">
+                            {manualSteps.map((stepItem, idx) => {
+                              const Icon = stepItem.icon
+                              const isActive = !stepItem.disabled && step === stepItem.index
+                              const isCompleted = !stepItem.disabled && step > stepItem.index
+                              const baseBorder = isActive ? "border-primary bg-primary/5" : isCompleted ? "border-primary/40 bg-primary/5" : "border-transparent"
+                              const baseText = isActive ? "text-primary" : isCompleted ? "text-primary" : "text-muted-foreground"
+                              return (
+                                <div
+                                  key={stepItem.index}
+                                  className={`flex items-start gap-3 rounded-xl border px-3 py-3 transition ${baseBorder}`}
+                                >
+                                  <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${isActive ? "bg-primary text-primary-foreground" : isCompleted ? "bg-primary/10 text-primary" : stepItem.disabled ? "bg-muted text-muted-foreground" : "bg-muted text-muted-foreground"}`}>
+                                    {isCompleted ? <Check className="h-4 w-4" /> : String(idx + 1).padStart(2, "0")}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <Icon className={`h-4 w-4 ${baseText}`} />
+                                      <span className={`text-sm font-medium ${baseText}`}>{stepItem.label}</span>
+                                      {stepItem.optional && (
+                                        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Opcional</span>
+                                      )}
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">{stepItem.description}</p>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border bg-muted/10 p-4 text-xs text-muted-foreground">
+                          Captura cuidadosamente la información. Puedes regresar a pasos anteriores antes de confirmar el resumen y generar la renta manual.
+                        </div>
+                      </aside>
+
+                      <div className="space-y-6">
+                        {manualErrors.creado_por && (
+                          <p className="text-xs font-medium text-destructive">{manualErrors.creado_por}</p>
+                        )}
+
+                        {step === 0 && (
+                          <div className="rounded-xl border bg-background p-5 shadow-sm">
+                            <InquilinoForm
+                              data={manualForm.inquilino}
+                              errors={manualErrors}
+                              onChange={updateInq}
+                            />
+                          </div>
+                        )}
+                        {step === 1 && (
+                          <div className="rounded-xl border bg-background p-5 shadow-sm">
+                            <PropietarioForm
+                              data={manualForm.propietario}
+                              errors={manualErrors}
+                              onChange={updatePropietario}
+                            />
+                          </div>
+                        )}
+                        {step === 2 && (
+                          <div className="rounded-xl border bg-background p-5 shadow-sm">
+                            <PropiedadForm
+                              data={manualForm.propiedad}
+                              errors={manualErrors}
+                              onChange={updatePropiedad}
+                            />
+                          </div>
+                        )}
+                        {step === 3 && (
+                          <div className="rounded-xl border bg-background p-5 shadow-sm">
+                            <ObligadoForm
+                              enabled={manualForm.incluirObligado}
+                              data={manualForm.obligado!}
+                              errors={manualErrors}
+                              onToggle={toggleObligado}
+                              onChange={updateObligado}
+                            />
+                          </div>
+                        )}
+                        {step === 4 && (
+                          <div className="space-y-4 rounded-xl border bg-background p-5 shadow-sm">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-base font-semibold">Resumen del proceso</h4>
+                              <Badge variant="outline">Revisión final</Badge>
+                            </div>
+                            <div className="grid gap-4 text-sm md:grid-cols-2">
+                              <div className="space-y-1 rounded-lg bg-muted/40 p-4">
+                                <div className="font-medium">Inquilino</div>
+                                <div>Tipo: {manualForm.inquilino.tipo_persona}</div>
+                                <div>Nombre/Razón: {manualForm.inquilino.tipo_persona === "moral" ? (manualForm.inquilino.razon_social || "—") : (manualForm.inquilino.nombre_completo || "—")}</div>
+                                <div>Teléfono: {manualForm.inquilino.telefono || "—"}</div>
+                                <div>Email: {manualForm.inquilino.correo || "—"}</div>
                               </div>
-                              {((i < 4) && !(i === 2 && !manualForm.incluirObligado)) && (
-                                <span className="mx-2 text-muted-foreground">→</span>
+                              <div className="space-y-1 rounded-lg bg-muted/40 p-4">
+                                <div className="font-medium">Propietario</div>
+                                <div>Tipo: {manualForm.propietario.tipo_persona}</div>
+                                <div>Nombre/Razón: {manualForm.propietario.tipo_persona === "moral" ? (manualForm.propietario.razon_social || "—") : (manualForm.propietario.nombre_completo || "—")}</div>
+                                <div>Teléfono: {manualForm.propietario.telefono || "—"}</div>
+                                <div>Email: {manualForm.propietario.correo || "—"}</div>
+                              </div>
+                              <div className="space-y-1 rounded-lg bg-muted/40 p-4 md:col-span-2">
+                                <div className="font-medium">Propiedad</div>
+                                <div>{manualForm.propiedad.tipo || "—"}</div>
+                                <div>{manualForm.propiedad.calle} {manualForm.propiedad.numero}, {manualForm.propiedad.colonia}</div>
+                                <div>CP {manualForm.propiedad.codigo_postal} · Estado ID {manualForm.propiedad.estado_id} · Ciudad ID {manualForm.propiedad.ciudad_id}</div>
+                                <div>Metros cuadrados: {manualForm.propiedad.metros_cuadrados || "—"}</div>
+                                <div>Monto renta: ${manualForm.propiedad.monto_renta}</div>
+                              </div>
+                              {manualForm.incluirObligado && manualForm.obligado && (
+                                <div className="space-y-1 rounded-lg bg-muted/40 p-4 md:col-span-2">
+                                  <div className="font-medium">Obligado solidario</div>
+                                  <div>Tipo: {manualForm.obligado.tipo_persona}</div>
+                                  <div>Nombre/Razón: {manualForm.obligado.tipo_persona === "moral" ? (manualForm.obligado.razon_social || "—") : (manualForm.obligado.nombre_completo || "—")}</div>
+                                  <div>Teléfono: {manualForm.obligado.telefono || "—"}</div>
+                                  <div>Email: {manualForm.obligado.correo || "—"}</div>
+                                </div>
                               )}
                             </div>
-                          )
-                        })}
-                      </div>
+                          </div>
+                        )}
 
-                      {manualErrors.creado_por && <p className="text-xs text-destructive -mb-2">{manualErrors.creado_por}</p>}
-
-                      {step === 0 && (
-                        <InquilinoForm
-                          data={manualForm.inquilino}
-                          errors={manualErrors}
-                          onChange={updateInq}
-                        />
-                      )}
-                      {step === 1 && (
-                        <PropietarioForm
-                          data={manualForm.propietario}
-                          errors={manualErrors}
-                          onChange={updatePropietario}
-                        />
-                      )}
-                      {step === 2 && (
-                        <PropiedadForm
-                          data={manualForm.propiedad}
-                          errors={manualErrors}
-                          onChange={updatePropiedad}
-                        />
-                      )}
-                      {step === 3 && (
-                        <ObligadoForm
-                          enabled={manualForm.incluirObligado}
-                          data={manualForm.obligado!}
-                          errors={manualErrors}
-                          onToggle={toggleObligado}
-                          onChange={updateObligado}
-                        />
-                      )}
-                      {step === 4 && (
-                        <section className="space-y-4">
-                          <h4 className="font-semibold">Resumen</h4>
-                          <div className="text-sm grid md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <div className="font-medium">Inquilino</div>
-                              <div>Tipo: {manualForm.inquilino.tipo_persona}</div>
-                              <div>Nombre/Razón: {manualForm.inquilino.tipo_persona === "moral" ? (manualForm.inquilino.razon_social || "—") : (manualForm.inquilino.nombre_completo || "—")}</div>
-                              <div>Teléfono: {manualForm.inquilino.telefono || "—"}</div>
-                              <div>Email: {manualForm.inquilino.correo || "—"}</div>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="font-medium">Propietario</div>
-                              <div>Tipo: {manualForm.propietario.tipo_persona}</div>
-                              <div>Nombre/Razón: {manualForm.propietario.tipo_persona === "moral" ? (manualForm.propietario.razon_social || "—") : (manualForm.propietario.nombre_completo || "—")}</div>
-                              <div>Teléfono: {manualForm.propietario.telefono || "—"}</div>
-                              <div>Email: {manualForm.propietario.correo || "—"}</div>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="font-medium">Propiedad</div>
-                              <div>{manualForm.propiedad.tipo} · {manualForm.propiedad.calle} {manualForm.propiedad.numero}, {manualForm.propiedad.colonia}</div>
-                              <div>CP {manualForm.propiedad.codigo_postal} · E:{manualForm.propiedad.estado_id} · C:{manualForm.propiedad.ciudad_id}</div>
-                              <div>Metros: {manualForm.propiedad.metros_cuadrados || "—"}</div>
-                              <div>Renta: ${manualForm.propiedad.monto_renta}</div>
-                            </div>
-                            {manualForm.incluirObligado && manualForm.obligado && (
-                              <div className="space-y-1">
-                                <div className="font-medium">Obligado solidario</div>
-                                <div>Tipo: {manualForm.obligado.tipo_persona}</div>
-                                <div>Nombre/Razón: {manualForm.obligado.tipo_persona === "moral" ? (manualForm.obligado.razon_social || "—") : (manualForm.obligado.nombre_completo || "—")}</div>
-                                <div>Teléfono: {manualForm.obligado.telefono || "—"}</div>
-                                <div>Email: {manualForm.obligado.correo || "—"}</div>
-                              </div>
+                        <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => setMode("menu")} disabled={submitting}>Cancelar</Button>
+                            {step > 0 && step <= 4 && (
+                              <Button variant="outline" onClick={prevStep} disabled={submitting}>Atrás</Button>
                             )}
                           </div>
-                        </section>
-                      )}
 
-                      <div className="flex justify-between gap-3">
-                        <div className="flex gap-2">
-                          <Button variant="outline" onClick={() => setMode("menu")} disabled={submitting}>Cancelar</Button>
-                          {step > 0 && step <= 4 && (
-                            <Button variant="outline" onClick={prevStep} disabled={submitting}>Atrás</Button>
+                          {step < 4 && (
+                            <Button onClick={nextStep} disabled={submitting}>Siguiente</Button>
+                          )}
+
+                          {step === 4 && (
+                            <Button onClick={submitManual} disabled={submitting}>
+                              {submitting ? "Creando…" : "Crear renta manual"}
+                            </Button>
                           )}
                         </div>
-
-                        {step < 4 && (
-                          <Button onClick={nextStep} disabled={submitting}>Siguiente</Button>
-                        )}
-
-                        {step === 4 && (
-                          <Button onClick={submitManual} disabled={submitting}>
-                            {submitting ? "Creando…" : "Crear renta manual"}
-                          </Button>
-                        )}
                       </div>
                     </div>
                   )}
