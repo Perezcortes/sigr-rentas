@@ -40,8 +40,12 @@ export function AdminTabs() {
     if (!user) return ""
     const direct = normalizeRole((user as unknown as Record<string, unknown>).role ?? user.role)
     if (direct) return direct
-    const fallback = (user as Record<string, unknown>)
-    const alt = typeof fallback.role_name === "string" ? fallback.role_name : typeof fallback.roleName === "string" ? fallback.roleName : ""
+    const recordUser: Record<string, unknown> = user && typeof user === "object" ? (user as Record<string, unknown>) : {}
+    const alt = typeof recordUser.role_name === "string"
+      ? recordUser.role_name
+      : typeof recordUser.roleName === "string"
+      ? recordUser.roleName
+      : ""
     return normalizeRole(alt)
   }, [user])
 

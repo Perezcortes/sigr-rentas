@@ -30,6 +30,7 @@ import { Users, Plus, Edit, Trash2, RefreshCw, Building2, Mail, Shield } from "l
 import type { UserRole } from "@/types/auth"
 import { useToast } from "@/components/ui/use-toast"
 import Hashids from "hashids"
+import { useAuth } from "@/contexts/auth-context"
 
 /* =================== UI helpers =================== */
 const INPUT_FOCUS =
@@ -372,6 +373,29 @@ export function UserManagement() {
   const [selectedRoleId, setSelectedRoleId] = useState<number | undefined>(undefined) // << clave
 
   const { toast } = useToast()
+  const { user } = useAuth()
+  const creatorRole = (user?.role ?? "agente").toString().toLowerCase()
+
+  function getAllowedTargetRoles(creator: string): UserRole[] {
+    switch (creator) {
+      case "administrador":
+        return ["administrador","gerente","coordinador","agente","propietario","inquilino"]
+      case "gerente":
+        return ["coordinador","agente","propietario","inquilino"]
+      case "coordinador":
+        return ["agente","propietario","inquilino"]
+      default:
+        return []
+    }
+  }
+  function canManageTarget(creator: UserRole, target: UserRole): boolean {
+    if (creator === "administrador") return true
+    if (creator === "gerente") return !["administrador","gerente"].includes(target)
+    if (creator === "coordinador") return ["agente","propietario","inquilino"].includes(target)
+    return false
+  }
+  const allowedTargetRoles = useMemo(() => getAllowedTargetRoles(creatorRole), [creatorRole])
+  const canCreateUsers = allowedTargetRoles.length > 0
 
   const filteredOffices = useMemo(() => {
     const q = officeSearch.trim().toLowerCase()
@@ -535,19 +559,21 @@ export function UserManagement() {
       let data: any
       try { data = JSON.parse(text) } catch { throw new Error("La respuesta de /roles no es JSON válido") }
       const list: ApiRole[] = Array.isArray(data) ? data : (data?.data ?? data?.result ?? [])
-      setRoles(list)
+      // Filtra opciones del selector conforme al rol del creador
+      const filtered = list.filter(r => allowedTargetRoles.includes(normalizeRoleToUserRole(r.nombre)))
+      setRoles(filtered)
 
-      // Sin selección previa: intenta por nombre normalizado del form, o el primero.
+      // Sin selección previa: intenta por nombre normalizado del form, o el primero permitido.
       if (!selectedRoleUid) {
         const normalized = (name?: string) => normalizeRoleToUserRole(name ?? "")
-        const byName = list.find(r => normalized(r.nombre) === formData.role)
-        const chosen = byName ?? list[0]
+        const byName = filtered.find(r => normalized(r.nombre) === formData.role)
+        const chosen = byName ?? filtered[0]
         if (chosen) {
           setSelectedRoleUid(chosen.uid ?? String(chosen.id ?? ""))
           if (chosen.id != null) setSelectedRoleId(chosen.id)
         }
       } else {
-        const f = list.find(r => (r.uid ?? String(r.id)) === selectedRoleUid)
+        const f = filtered.find(r => (r.uid ?? String(r.id)) === selectedRoleUid)
         if (f?.id != null) setSelectedRoleId(f.id)
       }
     } catch (e: any) {
@@ -568,6 +594,27 @@ export function UserManagement() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDialogOpen])
+
+  useEffect(() => {
+    if (!editingUser) return
+    if (roles.length === 0) return
+
+    const targetRole = editingUser.role
+    const targetRoleByName = editingUser.roleName ? normalizeRoleToUserRole(editingUser.roleName) : null
+
+    const match = roles.find((r) => {
+      const normalized = normalizeRoleToUserRole(r.nombre ?? "")
+      if (normalized === targetRole) return true
+      if (targetRoleByName && normalized === targetRoleByName) return true
+      if (typeof r.id === "number" && ROLE_BY_ID[r.id] === targetRole) return true
+      return false
+    })
+
+    if (!match) return
+    const value = match.uid ?? String(match.id ?? "")
+    if (selectedRoleUid !== value) setSelectedRoleUid(value)
+    if (typeof match.id === "number" && match.id !== selectedRoleId) setSelectedRoleId(match.id)
+  }, [editingUser, roles, selectedRoleUid, selectedRoleId])
 
   /* ========== CRUD ==========\*/
   async function createUser() {
@@ -660,6 +707,12 @@ export function UserManagement() {
   }
 
   const handleEditUser = async (user: SystemUser) => {
+    // Guardia por jerarquía: si no puede gestionar este usuario, no abre el diálogo
+    const canManage = canManageTarget(creatorRole as UserRole, user.role)
+    if (!canManage) {
+      toast({ title: "Permiso denegado", description: "No puedes editar este usuario.", variant: "destructive" })
+      return
+    }
     const parts = user.name.trim().split(/\s+/)
     let nombres = "", primer_apellido = "", segundo_apellido = ""
     if (parts.length >= 3) { segundo_apellido = parts.pop() as string; primer_apellido = parts.pop() as string; nombres = parts.join(" ") }
@@ -673,7 +726,19 @@ export function UserManagement() {
       correo: user.email, telefono: "", whatsapp: "",
       role: user.role, isActive: user.isActive, password: "",
     })
-    setSelectedOfficeIds([]); setOfficeSearch(""); setIsDialogOpen(true)
+    setSelectedOfficeIds([]); setOfficeSearch("")
+
+    const matchFromLoadedRoles = roles.find((r) => normalizeRoleToUserRole(r.nombre ?? "") === user.role)
+    if (matchFromLoadedRoles) {
+      const value = matchFromLoadedRoles.uid ?? String(matchFromLoadedRoles.id ?? "")
+      setSelectedRoleUid(value)
+      setSelectedRoleId(typeof matchFromLoadedRoles.id === "number" ? matchFromLoadedRoles.id : undefined)
+    } else {
+      setSelectedRoleUid(undefined)
+      setSelectedRoleId(undefined)
+    }
+
+    setIsDialogOpen(true)
 
     if (offices.length === 0 && !officesLoading) await fetchOfficesFromApi()
     if (roles.length === 0 && !rolesLoading) await fetchRolesFromApi()
@@ -718,6 +783,15 @@ export function UserManagement() {
   }
 
   const handleSaveUser = () => {
+    // Validar que el rol elegido esté permitido para el creador
+    const selectedRole = (() => {
+      const found = roles.find(r => (r.uid ?? String(r.id)) === selectedRoleUid)
+      return normalizeRoleToUserRole(found?.nombre)
+    })()
+    if (!allowedTargetRoles.includes(selectedRole)) {
+      toast({ title: "Permiso denegado", description: "No puedes crear usuarios con ese rol.", variant: "destructive" })
+      return
+    }
     const e = validateAll()
     setErrors(e)
     if (Object.keys(e).length > 0) {
@@ -729,6 +803,12 @@ export function UserManagement() {
   }
 
   const handleDeleteUser = async (id: string) => {
+    // Intentamos encontrar el usuario objetivo para validar jerarquía
+    const target = users.find(u => u.id === id)
+    if (target && !canManageTarget(creatorRole as UserRole, target.role)) {
+      toast({ title: "Permiso denegado", description: "No puedes eliminar este usuario.", variant: "destructive" })
+      return
+    }
     const confirmar = typeof window !== "undefined" ? window.confirm("¿Eliminar este usuario? (soft delete)") : true
     if (!confirmar) return
     setSubmitting(true)
@@ -792,7 +872,12 @@ export function UserManagement() {
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={handleAddUser} className="bg-primary hover:bg-primary/90" disabled={submitting}>
+              <Button
+                onClick={handleAddUser}
+                className="bg-primary hover:bg-primary/90"
+                disabled={submitting || !canCreateUsers}
+                title={!canCreateUsers ? "Tu rol no puede crear usuarios" : undefined}
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Nuevo Usuario
               </Button>
@@ -1129,7 +1214,7 @@ export function UserManagement() {
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Correo</TableHead>
-                  <TableHead>Rol</TableHead>
+                  {/* <TableHead>Rol</TableHead> */}
                   <TableHead>Oficina(s)</TableHead>
                   <TableHead>Último acceso</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -1150,12 +1235,17 @@ export function UserManagement() {
                     <TableCell className="text-muted-foreground">{u.oficina || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{u.lastLogin}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => handleEditUser(u)}>
+                      {/* Botones condicionados por jerarquía */}
+                      {canManageTarget(creatorRole as UserRole, u.role) && (
+                        <Button variant="outline" size="sm" onClick={() => handleEditUser(u)}>
                         <Edit className="h-4 w-4 mr-1" /> Editar
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
+                        </Button>
+                      )}
+                      {canManageTarget(creatorRole as UserRole, u.role) && (
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
                         <Trash2 className="h-4 w-4 mr-1" /> Eliminar
-                      </Button>
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

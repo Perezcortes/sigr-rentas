@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "@/lib/auth"
 import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +20,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Building2, Plus, Edit, Trash2, RefreshCw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { Switch } from "@/components/ui/switch"
 
 /* ────────────────────────────────
    Reglas / límites
@@ -27,7 +28,6 @@ import { useToast } from "@/components/ui/use-toast"
 const MAX_BRANCH_NAME = 80
 const MIN_BRANCH_NAME = 2
 const MAX_MANAGER_NAME = 80
-const MAX_ADDRESS = 160
 const MAX_STREET = 120
 const MAX_NEIGHBORHOOD = 80
 const MAX_MUNICIPALITY = 80
@@ -35,9 +35,9 @@ const MAX_CITYTEXT = 80
 const MAX_CODE = 16
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const PHONE_RE = /^[0-9()+\-.\s]{7,18}$/          // tolerante, 7–18 chars válidos
-const POSTAL_RE = /^\d{4,6}$/                     // CP 4–6 dígitos (ajústalo si necesitas 5 fijo)
-const CODE_RE = /^[A-Za-z0-9_-]+$/                // letras/números/guion/guion_bajo
+const PHONE_RE = /^[0-9()+\-.\s]{7,18}$/
+const POSTAL_RE = /^\d{5}$/ // ajustado a 5 dígitos MX
+const CODE_RE = /^[A-Za-z0-9_-]+$/
 const LAT_RE = /^-?\d+(\.\d+)?$/
 const LNG_RE = /^-?\d+(\.\d+)?$/
 
@@ -54,26 +54,32 @@ interface Branch {
   manager: string
   status: "active" | "inactive"
   employees: number
+  code?: string
+  statusReceiveLeads?: boolean
 }
 
 const initialForm = {
   name: "",
   code: "",
   manager: "",
+  // switches
   status: "active" as "active" | "inactive",
   statusReceiveLeads: true,
+  // contacto
   phone: "",
   email: "",
+  // ubicación (API: ciudad y estate_id son IDs)
   cityId: "" as number | string,
   stateId: "" as number | string,
   cityText: "",
-  address: "",
+  // dirección desglosada
   street: "",
   extNumber: "",
   intNumber: "",
   neighborhood: "",
   municipality: "",
   postalCode: "",
+  // geo
   lat: "" as number | string,
   lng: "" as number | string,
 }
@@ -93,7 +99,8 @@ function toBranch(row: any): Branch {
   const address = row?.direccion ?? (addressParts.join(", ") || "")
 
   const cityId =
-    typeof row?.ciudad_id === "number" ? row?.ciudad_id
+    typeof row?.ciudad === "number" ? row?.ciudad
+    : typeof row?.ciudad_id === "number" ? row?.ciudad_id
     : typeof row?.city_id === "number" ? row?.city_id
     : undefined
 
@@ -108,10 +115,7 @@ function toBranch(row: any): Branch {
     row?.delegacion_municipio ??
     (typeof row?.ciudad === "string" ? row?.ciudad : "") ?? ""
 
-  const stateName =
-    row?.estado?.nombre ??
-    row?.state?.nombre ??
-    ""
+  const stateName = row?.estado?.nombre ?? row?.state?.nombre ?? ""
 
   const status: "active" | "inactive" =
     row?.estatus_actividad === false ? "inactive" : "active"
@@ -129,6 +133,8 @@ function toBranch(row: any): Branch {
     manager: String(row?.responsable ?? ""),
     status,
     employees: Number(row?.empleados ?? 0),
+    code: row?.clave ?? "",
+    statusReceiveLeads: row?.estatus_recibir_leads ?? true,
   }
 }
 
@@ -139,7 +145,7 @@ function safeNumber(v: string | number): number | undefined {
 }
 
 /* ────────────────────────────────
-   Validación (solo reglas de campos)
+   Validación
 ──────────────────────────────── */
 function validateForm(f: FormState): FormErrors {
   const e: FormErrors = {}
@@ -152,7 +158,7 @@ function validateForm(f: FormState): FormErrors {
   const code = (f.code ?? "").trim()
   if (code) {
     if (code.length > MAX_CODE) e.code = `Máximo ${MAX_CODE} caracteres`
-    else if (!CODE_RE.test(code)) e.code = "Usa solo letras, números, guion y guion bajo"
+    else if (!CODE_RE.test(code)) e.code = "Usa solo letras, números, guion y guion_bajo"
   }
 
   const manager = (f.manager ?? "").trim()
@@ -163,9 +169,6 @@ function validateForm(f: FormState): FormErrors {
 
   const phone = (f.phone ?? "").trim()
   if (phone && !PHONE_RE.test(phone)) e.phone = "Teléfono inválido"
-
-  const address = (f.address ?? "").trim()
-  if (address.length > MAX_ADDRESS) e.address = `Máximo ${MAX_ADDRESS} caracteres`
 
   const street = (f.street ?? "").trim()
   if (street.length > MAX_STREET) e.street = `Máximo ${MAX_STREET} caracteres`
@@ -183,10 +186,10 @@ function validateForm(f: FormState): FormErrors {
   if (postal && !POSTAL_RE.test(postal)) e.postalCode = "Código postal inválido"
 
   const cityId = safeNumber(f.cityId)
-  if (f.cityId !== "" && cityId === undefined) e.cityId = "Debe ser numérico"
+  if (cityId === undefined) e.cityId = "La ciudad (ID) es obligatoria y numérica"
 
   const stateId = safeNumber(f.stateId)
-  if (f.stateId !== "" && stateId === undefined) e.stateId = "Debe ser numérico"
+  if (stateId === undefined) e.stateId = "El estado (estate_id) es obligatorio y numérico"
 
   const latStr = String(f.lat ?? "")
   if (latStr !== "") {
@@ -209,12 +212,15 @@ function validateForm(f: FormState): FormErrors {
   return e
 }
 
+/**
+ * Payload EXACTO según Swagger
+ */
 function toOfficePayload(form: FormState) {
   const nombre = form.name.trim()
   if (!nombre) throw new Error("El nombre de la sucursal es obligatorio")
 
-  const ciudadId = safeNumber(form.cityId)
-  const estadoId = safeNumber(form.stateId)
+  const ciudad = safeNumber(form.cityId)
+  const estate_id = safeNumber(form.stateId)
   const lat = safeNumber(form.lat)
   const lng = safeNumber(form.lng)
 
@@ -224,22 +230,20 @@ function toOfficePayload(form: FormState) {
     correo: form.email?.trim() || undefined,
     responsable: form.manager?.trim() || undefined,
     clave: form.code?.trim() || undefined,
+    estatus_actividad: form.status === "active",
+    estatus_recibir_leads: !!form.statusReceiveLeads,
     calle: form.street?.trim() || undefined,
     numero_exterior: form.extNumber?.trim() || undefined,
     numero_interior: form.intNumber?.trim() || undefined,
     colonia: form.neighborhood?.trim() || undefined,
     delegacion_municipio: form.municipality?.trim() || undefined,
     codigo_postal: form.postalCode?.trim() || undefined,
-    ciudad: form.cityText?.trim() || undefined,
+    ciudad,
+    estate_id,
     lat,
     lng,
-    direccion: form.address?.trim() || undefined,
-    ciudad_id: ciudadId,
-    estate_id: estadoId,
-    estado_id: estadoId,
-    estatus_actividad: form.status === "active",
-    estatus_recibir_leads: !!form.statusReceiveLeads,
   }
+
   Object.keys(payload).forEach((k) => {
     if (payload[k] === undefined || payload[k] === "") delete payload[k]
   })
@@ -272,10 +276,9 @@ export function BranchManagement() {
 
   const { toast } = useToast()
 
-  // === permisos ===
+  // permisos
   const { user } = useAuth()
-  const userPerms: string[] =
-    (user as any)?.permissions ?? (user as any)?.permisos ?? []
+  const userPerms: string[] = (user as any)?.permissions ?? (user as any)?.permisos ?? []
   const has = (p: string) => userPerms.includes(p)
 
   const canView = has("ver_oficinas") || has("ver_todas_oficinas")
@@ -283,68 +286,98 @@ export function BranchManagement() {
   const canEdit = has("editar_oficinas")
   const canDelete = has("eliminar_oficinas")
 
-  const [filters, setFilters] = useState<{
-    search: string
-    cityId?: string
-    estateId?: string
-    status?: "all" | "active" | "inactive"
-  }>({ search: "", cityId: "", estateId: "", status: "all" })
+  const [filters, setFilters] = useState<{ search: string; cityId?: string; estateId?: string; status?: "all" | "active" | "inactive" }>({
+    search: "",
+    cityId: "",
+    estateId: "",
+    status: "all",
+  })
 
   const [searchValue, setSearchValue] = useState("")
   useEffect(() => {
-    const t = setTimeout(() => {
-      setFilters((f) => ({ ...f, search: searchValue }))
-    }, 300)
+    const t = setTimeout(() => setFilters((f) => ({ ...f, search: searchValue })), 300)
     return () => clearTimeout(t)
   }, [searchValue])
 
-  async function fetchOffices(opts?: { keepMessages?: boolean }) {
+  /* ────────────────────────────────
+     Lookup por Código Postal
+  ───────────────────────────────── */
+  const [cpLoading, setCpLoading] = useState(false)
+  const [cpInfo, setCpInfo] = useState<{ estado?: string; municipio?: string; colonias: string[] } | null>(null)
+  const postalTimer = useRef<NodeJS.Timeout | null>(null)
+
+  const fetchPostalInfo = async (cp: string) => {
+    if (!POSTAL_RE.test(cp)) {
+      setCpInfo(null)
+      return
+    }
+    setCpLoading(true)
+    try {
+      const res = await api(`/postal-codes/${encodeURIComponent(cp)}`)
+      const estado = res?.estado ?? res?.state ?? ""
+      const municipio = res?.municipio ?? res?.delegacion_municipio ?? ""
+      const colonias: string[] = Array.isArray(res?.colonias) ? res.colonias : []
+      setCpInfo({ estado, municipio, colonias })
+
+      // Autorrellenar municipio (delegacion_municipio)
+      setFormData((fd) => ({ ...fd, municipality: municipio || fd.municipality }))
+      // Si hay colonias, no forcemos automáticamente la colonia; el usuario elegirá.
+    } catch (err: any) {
+      setCpInfo(null)
+      toast({
+        title: "No se pudo obtener el código postal",
+        description: err?.message ?? "Verifica que el backend responda /postal-codes/{cp}",
+        variant: "destructive",
+      })
+    } finally {
+      setCpLoading(false)
+    }
+  }
+
+  // Debounce cuando cambia el CP
+  useEffect(() => {
+    if (postalTimer.current) clearTimeout(postalTimer.current)
+    postalTimer.current = setTimeout(() => {
+      if (formData.postalCode && POSTAL_RE.test(formData.postalCode)) {
+        fetchPostalInfo(formData.postalCode)
+      } else {
+        setCpInfo(null)
+      }
+    }, 300)
+    return () => {
+      if (postalTimer.current) clearTimeout(postalTimer.current)
+    }
+  }, [formData.postalCode])
+
+  async function fetchOffices() {
     if (!canView) return
     setLoading(true)
-
     try {
       const query = buildQuery({
         search: filters.search || undefined,
-        cityId: filters.cityId ? Number(filters.cityId) : undefined,
-        estateId: filters.estateId ? Number(filters.estateId) : undefined,
+        ciudad: filters.cityId ? Number(filters.cityId) : undefined,
+        estate_id: filters.estateId ? Number(filters.estateId) : undefined,
         estatus_actividad:
-          filters.status === "all"
-            ? undefined
-            : filters.status === "active"
-            ? true
-            : false,
+          filters.status === "all" ? undefined : filters.status === "active" ? true : false,
       })
-
       const raw = await api(`/offices${query}`)
       const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.result ?? [])
       setBranches(list.map(toBranch))
     } catch (e: any) {
-      toast({
-        title: "Error",
-        description: e?.message || "No se pudo obtener la lista de oficinas",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: e?.message || "No se pudo obtener la lista de oficinas", variant: "destructive" })
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    fetchOffices()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView])
-
-  useEffect(() => {
-    fetchOffices({ keepMessages: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.cityId, filters.estateId, filters.status, filters.search, canView])
+  useEffect(() => { fetchOffices() }, [canView])
+  useEffect(() => { fetchOffices() }, [filters.cityId, filters.estateId, filters.status, filters.search, canView])
 
   async function createOffice() {
     setSubmitted(true)
     const errs = validateForm(formData)
     setFormErrors(errs)
     if (Object.keys(errs).length > 0) return
-
     if (!canCreate) {
       toast({ title: "Permisos", description: "No puedes crear oficinas.", variant: "destructive" })
       return
@@ -369,12 +402,12 @@ export function BranchManagement() {
       setSubmitting(false)
     }
   }
+
   async function updateOffice(id: string) {
     setSubmitted(true)
     const errs = validateForm(formData)
     setFormErrors(errs)
     if (Object.keys(errs).length > 0) return
-
     if (!canEdit) {
       toast({ title: "Permisos", description: "No puedes editar oficinas.", variant: "destructive" })
       return
@@ -407,7 +440,6 @@ export function BranchManagement() {
     }
     const ok = typeof window !== "undefined" ? window.confirm("¿Eliminar esta oficina?") : true
     if (!ok) return
-
     setSubmitting(true)
     try {
       await api(`/offices/${encodeURIComponent(id)}`, { method: "DELETE" }, { expectJson: false })
@@ -431,18 +463,18 @@ export function BranchManagement() {
 
   const handleEditBranch = (branch: Branch) => {
     setEditingBranch(branch)
-    setFormData((prev) => ({
+    setFormData({
       ...initialForm,
       name: branch.name,
-      address: branch.address,
       cityId: branch.cityId ?? "",
       stateId: branch.stateId ?? "",
       phone: branch.phone,
       email: branch.email,
       manager: branch.manager,
       status: branch.status,
-      statusReceiveLeads: true,
-    }))
+      statusReceiveLeads: branch.statusReceiveLeads ?? true,
+      code: branch.code ?? "",
+    })
     setFormErrors({})
     setTouched({})
     setSubmitted(false)
@@ -459,15 +491,13 @@ export function BranchManagement() {
   }
 
   /* ────────────────────────────────
-     Helpers de UI para validación inline
+     Helpers de UI
   ───────────────────────────────── */
   const inputFocus =
     "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
   const selectFocus = "focus:ring-2 focus:ring-secondary focus:border-secondary"
 
-  const err = (k: keyof FormState) =>
-    !!formErrors[k] && (touched[k] || submitted)
-
+  const err = (k: keyof FormState) => !!formErrors[k] && (touched[k] || submitted)
   const cls = (k: keyof FormState) =>
     `${inputFocus} ${err(k) ? "border-destructive focus-visible:ring-destructive" : ""}`
 
@@ -488,8 +518,6 @@ export function BranchManagement() {
     [branches]
   )
 
-  // Si no puede ver, fallback simple
-  const { user: _user } = useAuth()
   if (!canView) {
     return (
       <div className="space-y-6">
@@ -538,35 +566,29 @@ export function BranchManagement() {
                   {/* Principales */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Nombre</Label>
+                      <Label htmlFor="name">nombre *</Label>
                       <Input
                         id="name"
                         value={formData.name}
                         onChange={(e) => setField("name", e.target.value)}
                         onBlur={() => onBlurField("name")}
-                        placeholder="Nombre de la sucursal"
+                        placeholder="Oficina Central"
                         className={cls("name")}
                         aria-invalid={err("name")}
                         aria-describedby={err("name") ? "err-name" : undefined}
                         maxLength={MAX_BRANCH_NAME}
                       />
-                      <div className="flex items-center justify-between">
-                        {err("name") && (
-                          <p id="err-name" className="text-xs text-destructive mt-1">{formErrors.name}</p>
-                        )}
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {(formData.name ?? "").trim().length}/{MAX_BRANCH_NAME}
-                        </span>
-                      </div>
+                      {err("name") && <p id="err-name" className="text-xs text-destructive mt-1">{formErrors.name}</p>}
                     </div>
+
                     <div className="space-y-2">
-                      <Label htmlFor="code">Clave</Label>
+                      <Label htmlFor="code">clave</Label>
                       <Input
                         id="code"
                         value={formData.code}
                         onChange={(e) => setField("code", e.target.value)}
                         onBlur={() => onBlurField("code")}
-                        placeholder="Ej. OAX01"
+                        placeholder="OAX001"
                         className={cls("code")}
                         aria-invalid={err("code")}
                         aria-describedby={err("code") ? "err-code" : undefined}
@@ -578,13 +600,13 @@ export function BranchManagement() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="manager">Responsable / Gerente</Label>
+                      <Label htmlFor="manager">responsable</Label>
                       <Input
                         id="manager"
                         value={formData.manager}
                         onChange={(e) => setField("manager", e.target.value)}
                         onBlur={() => onBlurField("manager")}
-                        placeholder="Nombre del responsable"
+                        placeholder="Juan Pérez"
                         className={cls("manager")}
                         aria-invalid={err("manager")}
                         aria-describedby={err("manager") ? "err-manager" : undefined}
@@ -594,14 +616,14 @@ export function BranchManagement() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
+                      <Label htmlFor="email">correo</Label>
                       <Input
                         id="email"
                         type="email"
                         value={formData.email}
                         onChange={(e) => setField("email", e.target.value)}
                         onBlur={() => onBlurField("email")}
-                        placeholder="sucursal@empresa.com"
+                        placeholder="contacto@sigr.com"
                         className={cls("email")}
                         aria-invalid={err("email")}
                         aria-describedby={err("email") ? "err-email" : undefined}
@@ -612,13 +634,13 @@ export function BranchManagement() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="phone">Teléfono</Label>
+                      <Label htmlFor="phone">telefono</Label>
                       <Input
                         id="phone"
                         value={formData.phone}
                         onChange={(e) => setField("phone", e.target.value)}
                         onBlur={() => onBlurField("phone")}
-                        placeholder="+52 55 1234-5678"
+                        placeholder="9531234567"
                         className={cls("phone")}
                         aria-invalid={err("phone")}
                         aria-describedby={err("phone") ? "err-phone" : undefined}
@@ -626,44 +648,36 @@ export function BranchManagement() {
                       {err("phone") && <p id="err-phone" className="text-xs text-destructive mt-1">{formErrors.phone}</p>}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="status">Estado de actividad</Label>
-                      <Select
-                        value={formData.status}
-                        onValueChange={(value: "active" | "inactive") =>
-                          setField("status", value)
-                        }
-                      >
-                        <SelectTrigger className={selectFocus}>
-                          <SelectValue placeholder="Selecciona estado" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="active">Activa</SelectItem>
-                          <SelectItem value="inactive">Inactiva</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    {/* Switches */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2">estatus_actividad</Label>
+                        <div className="flex h-10 items-center gap-3">
+                          <Switch
+                            checked={formData.status === "active"}
+                            onCheckedChange={(v) => setField("status", v ? "active" : "inactive")}
+                          />
+                          <span className="text-sm text-muted-foreground">{formData.status === "active" ? "Activa" : "Inactiva"}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2">estatus_recibir_leads</Label>
+                        <div className="flex h-10 items-center gap-3">
+                          <Switch
+                            checked={!!formData.statusReceiveLeads}
+                            onCheckedChange={(v) => setField("statusReceiveLeads", v)}
+                          />
+                          <span className="text-sm text-muted-foreground">{formData.statusReceiveLeads ? "Sí" : "No"}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Dirección (compacta, opcional)</Label>
-                    <Input
-                      id="address"
-                      value={formData.address}
-                      onChange={(e) => setField("address", e.target.value)}
-                      onBlur={() => onBlurField("address")}
-                      placeholder="Calle, número, colonia"
-                      className={cls("address")}
-                      aria-invalid={err("address")}
-                      aria-describedby={err("address") ? "err-address" : undefined}
-                      maxLength={MAX_ADDRESS}
-                    />
-                    {err("address") && <p id="err-address" className="text-xs text-destructive mt-1">{formErrors.address}</p>}
-                  </div>
-
+                  {/* Dirección desglosada */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="street">Calle</Label>
+                      <Label htmlFor="street">calle</Label>
                       <Input
                         id="street"
                         value={formData.street}
@@ -678,7 +692,7 @@ export function BranchManagement() {
                       {err("street") && <p id="err-street" className="text-xs text-destructive mt-1">{formErrors.street}</p>}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="extNumber">No. exterior</Label>
+                      <Label htmlFor="extNumber">numero_exterior</Label>
                       <Input
                         id="extNumber"
                         value={formData.extNumber}
@@ -689,36 +703,56 @@ export function BranchManagement() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="intNumber">No. interior</Label>
+                      <Label htmlFor="intNumber">numero_interior</Label>
                       <Input
                         id="intNumber"
                         value={formData.intNumber}
                         onChange={(e) => setField("intNumber", e.target.value)}
                         onBlur={() => onBlurField("intNumber")}
-                        placeholder="A-2"
+                        placeholder="Local A"
                         className={cls("intNumber")}
                       />
                     </div>
+
+                    {/* Colonia (Select dinámico según CP) */}
                     <div className="space-y-2">
-                      <Label htmlFor="neighborhood">Colonia</Label>
-                      <Input
-                        id="neighborhood"
-                        value={formData.neighborhood}
-                        onChange={(e) => setField("neighborhood", e.target.value)}
-                        onBlur={() => onBlurField("neighborhood")}
-                        placeholder="Centro"
-                        className={cls("neighborhood")}
-                        aria-invalid={err("neighborhood")}
-                        aria-describedby={err("neighborhood") ? "err-neighborhood" : undefined}
-                        maxLength={MAX_NEIGHBORHOOD}
-                      />
+                      <Label htmlFor="neighborhood">colonia</Label>
+
+                      {cpInfo?.colonias?.length ? (
+                        <Select
+                          value={formData.neighborhood || undefined}
+                          onValueChange={(v) => setField("neighborhood", v)}
+                        >
+                          <SelectTrigger className={selectFocus}>
+                            <SelectValue placeholder="Selecciona colonia" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cpInfo.colonias.map((c) => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          id="neighborhood"
+                          value={formData.neighborhood}
+                          onChange={(e) => setField("neighborhood", e.target.value)}
+                          onBlur={() => onBlurField("neighborhood")}
+                          placeholder="Centro"
+                          className={cls("neighborhood")}
+                          aria-invalid={err("neighborhood")}
+                          aria-describedby={err("neighborhood") ? "err-neighborhood" : undefined}
+                          maxLength={MAX_NEIGHBORHOOD}
+                        />
+                      )}
+
                       {err("neighborhood") && <p id="err-neighborhood" className="text-xs text-destructive mt-1">{formErrors.neighborhood}</p>}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="municipality">Delegación/Municipio</Label>
+                      <Label htmlFor="municipality">delegacion_municipio</Label>
                       <Input
                         id="municipality"
                         value={formData.municipality}
@@ -730,26 +764,47 @@ export function BranchManagement() {
                         aria-describedby={err("municipality") ? "err-municipality" : undefined}
                         maxLength={MAX_MUNICIPALITY}
                       />
+                      {/* Hint de CP */}
+                      {cpLoading ? (
+                        <p className="text-xs text-muted-foreground">Buscando municipio…</p>
+                      ) : cpInfo?.municipio ? (
+                        <p className="text-xs text-muted-foreground">Detectado: {cpInfo.municipio}</p>
+                      ) : null}
                       {err("municipality") && <p id="err-municipality" className="text-xs text-destructive mt-1">{formErrors.municipality}</p>}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="postalCode">Código postal</Label>
+                      <Label htmlFor="postalCode">codigo_postal</Label>
                       <Input
                         id="postalCode"
                         value={formData.postalCode}
-                        onChange={(e) => setField("postalCode", e.target.value)}
+                        onChange={(e) => setField("postalCode", e.target.value.replace(/\D+/g, "").slice(0, 5))}
                         onBlur={() => onBlurField("postalCode")}
                         placeholder="68000"
                         className={cls("postalCode")}
                         aria-invalid={err("postalCode")}
                         aria-describedby={err("postalCode") ? "err-postalCode" : undefined}
                       />
+                      {cpLoading && <p className="text-xs text-muted-foreground">Consultando CP…</p>}
                       {err("postalCode") && <p id="err-postalCode" className="text-xs text-destructive mt-1">{formErrors.postalCode}</p>}
                     </div>
 
+                    {/* Estado detectado (solo lectura) */}
                     <div className="space-y-2">
-                      <Label htmlFor="cityText">Ciudad (texto)</Label>
+                      <Label htmlFor="stateDetected">estado (auto)</Label>
+                      <Input
+                        id="stateDetected"
+                        value={cpInfo?.estado ?? ""}
+                        readOnly
+                        placeholder="—"
+                        className={inputFocus}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="cityText">Ciudad (texto, opcional)</Label>
                       <Input
                         id="cityText"
                         value={formData.cityText}
@@ -763,33 +818,32 @@ export function BranchManagement() {
                       />
                       {err("cityText") && <p id="err-cityText" className="text-xs text-destructive mt-1">{formErrors.cityText}</p>}
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="cityId">Ciudad (ID numérico)</Label>
+                      <Label htmlFor="cityId">ciudad (ID numérico) *</Label>
                       <Input
                         id="cityId"
                         type="number"
                         value={formData.cityId}
                         onChange={(e) => setField("cityId", e.target.value)}
                         onBlur={() => onBlurField("cityId")}
-                        placeholder="Ej. 125"
+                        placeholder="1"
                         className={cls("cityId")}
                         aria-invalid={err("cityId")}
                         aria-describedby={err("cityId") ? "err-cityId" : undefined}
                       />
                       {err("cityId") && <p id="err-cityId" className="text-xs text-destructive mt-1">{formErrors.cityId}</p>}
                     </div>
+
                     <div className="space-y-2">
-                      <Label htmlFor="stateId">Estado (ID numérico)</Label>
+                      <Label htmlFor="stateId">estate_id (ID numérico) *</Label>
                       <Input
                         id="stateId"
                         type="number"
                         value={formData.stateId}
                         onChange={(e) => setField("stateId", e.target.value)}
                         onBlur={() => onBlurField("stateId")}
-                        placeholder="Ej. 20"
+                        placeholder="1"
                         className={cls("stateId")}
                         aria-invalid={err("stateId")}
                         aria-describedby={err("stateId") ? "err-stateId" : undefined}
@@ -798,10 +852,11 @@ export function BranchManagement() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="lat">Lat</Label>
+                      <Label htmlFor="lat">lat</Label>
                       <Input
                         id="lat"
                         type="number"
+                        step="any"
                         value={formData.lat}
                         onChange={(e) => setField("lat", e.target.value)}
                         onBlur={() => onBlurField("lat")}
@@ -812,15 +867,17 @@ export function BranchManagement() {
                       />
                       {err("lat") && <p id="err-lat" className="text-xs text-destructive mt-1">{formErrors.lat}</p>}
                     </div>
+
                     <div className="space-y-2">
-                      <Label htmlFor="lng">Lng</Label>
+                      <Label htmlFor="lng">lng</Label>
                       <Input
                         id="lng"
                         type="number"
+                        step="any"
                         value={formData.lng}
                         onChange={(e) => setField("lng", e.target.value)}
                         onBlur={() => onBlurField("lng")}
-                        placeholder="−96.7236"
+                        placeholder="-96.7236"
                         className={cls("lng")}
                         aria-invalid={err("lng")}
                         aria-describedby={err("lng") ? "err-lng" : undefined}
@@ -862,14 +919,14 @@ export function BranchManagement() {
               className={inputFocus}
             />
             <Input
-              placeholder="Ciudad ID"
+              placeholder="ciudad (ID)"
               type="number"
               value={filters.cityId}
               onChange={(e) => setFilters((f) => ({ ...f, cityId: e.target.value }))}
               className={inputFocus}
             />
             <Input
-              placeholder="Estado ID"
+              placeholder="estate_id (ID)"
               type="number"
               value={filters.estateId}
               onChange={(e) => setFilters((f) => ({ ...f, estateId: e.target.value }))}
@@ -898,7 +955,7 @@ export function BranchManagement() {
                   <TableHead>Dirección</TableHead>
                   <TableHead>Ciudad</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead>Gerente</TableHead>
+                  <TableHead>Responsable</TableHead>
                   {(canEdit || canDelete) && <TableHead className="text-right">Acciones</TableHead>}
                 </TableRow>
               </TableHeader>
