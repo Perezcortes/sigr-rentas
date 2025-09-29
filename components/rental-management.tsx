@@ -795,7 +795,16 @@ export function RentalManagement() {
     { title: "Pendientes", value: rentals.filter((r) => r.status === "apartada").length.toString(), icon: FileText, color: "text-orange-600" },
   ]), [rentals])
 
-  const openProcess = (r: Rental) => { setSelectedRental(r); setIsProcessDialogOpen(true) }
+  const openProcess = (r: Rental) => {
+    // Open dedicated page in a new tab
+    try {
+      window.open(`/rentas/${encodeURIComponent(r.id)}`, "_blank")
+    } catch {
+      // Fallback to dialog if window open is blocked
+      setSelectedRental(r)
+      setIsProcessDialogOpen(true)
+    }
+  }
 
   const resetModal = () => {
     setMode("menu")
