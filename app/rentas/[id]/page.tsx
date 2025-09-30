@@ -8,7 +8,6 @@ import { api } from "@/lib/auth"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
-// Local mapeando componente
 function toRental(row: any): Rental {
   const inq = row?.inquilino ?? {}
   const prop = row?.propietario ?? {}
@@ -75,6 +74,10 @@ export default function RentalProcessPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const id = useMemo(() => String(params?.id ?? ""), [params])
+
+  // lee ?edit=1 para habilitar edición
+  const editable = useMemo(() => searchParams.get("edit") === "1", [searchParams])
+
   const [rental, setRental] = useState<Rental | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -148,12 +151,41 @@ export default function RentalProcessPage() {
 
   return (
     <div className="p-4 md:p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Proceso de Renta – {rental.inquilino.nombre || rental.inquilino.razonSocial}</h1>
-        <Button variant="outline" onClick={() => window.close()}>Cerrar</Button>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-lg font-semibold">
+          Proceso de Renta – {rental.inquilino.nombre || rental.inquilino.razonSocial}
+        </h1>
+
+        <div className="flex gap-2">
+          {/* Toggle rápido entre ver/editar modificando la query */}
+          {editable ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const url = new URL(window.location.href)
+                url.searchParams.delete("edit")
+                window.location.href = url.toString()
+              }}
+            >
+              Salir de edición
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                const url = new URL(window.location.href)
+                url.searchParams.set("edit", "1")
+                window.location.href = url.toString()
+              }}
+            >
+              Editar
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => window.close()}>Cerrar</Button>
+        </div>
       </div>
-      <RentalProcess rental={rental} />
+
+      {/* pasa la bandera editable al proceso */}
+      <RentalProcess rental={rental} editable={editable} />
     </div>
   )
 }
-
