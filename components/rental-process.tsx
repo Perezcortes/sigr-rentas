@@ -16,6 +16,10 @@ import {
 } from "lucide-react"
 import type { Rental } from "@/types/rental"
 import { api } from "@/lib/auth"
+import { InquilinoTab } from "@/components/rental-tabs/InquilinoTab"
+import { ObligadoTab } from "@/components/rental-tabs/ObligadoTab"
+import { PropietarioTab } from "@/components/rental-tabs/PropietarioTab"
+import { PropiedadTab } from "@/components/rental-tabs/PropiedadTab"
 
 interface RentalProcessProps {
   rental: Rental
@@ -185,342 +189,43 @@ export function RentalProcess({ rental, editable = false }: RentalProcessProps) 
 
         {/* INQUILINO */}
         <TabsContent value="inquilino" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Datos del Inquilino</CardTitle>
-              <CardDescription>Información personal o empresarial del inquilino</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-4">
-                <Label>Tipo de Persona:</Label>
-                <Select value={inquilino.type} disabled>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fisica">Persona Física</SelectItem>
-                    <SelectItem value="moral">Persona Moral</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {inquilino.type === "fisica" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nombre Completo</Label>
-                    <Input
-                      value={inquilino.nombre || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, nombre: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono</Label>
-                    <Input
-                      value={inquilino.telefono || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, telefono: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Correo</Label>
-                    <Input
-                      value={inquilino.correo || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, correo: e.target.value })}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Razón Social</Label>
-                    <Input
-                      value={inquilino.razonSocial || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, razonSocial: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Nombre Comercial</Label>
-                    <Input
-                      value={inquilino.nombreComercial || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, nombreComercial: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Representante Legal</Label>
-                    <Input
-                      value={inquilino.representante || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, representante: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono</Label>
-                    <Input
-                      value={inquilino.telefono || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, telefono: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Correo</Label>
-                    <Input
-                      value={inquilino.correo || ""}
-                      readOnly={!editable}
-                      onChange={(e) => setInquilino({ ...inquilino, correo: e.target.value })}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {editable && (
-                <div className="pt-2">
-                  <Button onClick={() => saveSection("inquilino", inquilino)}>Guardar cambios</Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <InquilinoTab
+            value={inquilino}
+            editable={editable}
+            onChange={setInquilino}
+            onSave={() => saveSection("inquilino", inquilino)}
+          />
         </TabsContent>
 
         {/* OBLIGADO */}
         <TabsContent value="obligado" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Obligado Solidario</CardTitle>
-              <CardDescription>Información del obligado solidario (opcional)</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {obligado ? (
-                <>
-                  <div className="flex items-center space-x-4">
-                    <Label>Tipo de Persona:</Label>
-                    <Select value={(obligado as any).type ?? "fisica"} disabled>
-                      <SelectTrigger className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="fisica">Persona Física</SelectItem>
-                        <SelectItem value="moral">Persona Moral</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Nombre / Razón Social</Label>
-                      <Input
-                        value={(obligado as any).nombre || (obligado as any).razonSocial || ""}
-                        readOnly={!editable}
-                        onChange={(e) => setObligado({ ...(obligado as any), nombre: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Teléfono</Label>
-                      <Input
-                        value={(obligado as any).telefono || ""}
-                        readOnly={!editable}
-                        onChange={(e) => setObligado({ ...(obligado as any), telefono: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Correo</Label>
-                      <Input
-                        value={(obligado as any).correo || ""}
-                        readOnly={!editable}
-                        onChange={(e) => setObligado({ ...(obligado as any), correo: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  {editable && (
-                    <div className="pt-2 flex gap-2">
-                      <Button onClick={() => saveSection("obligadoSolidario", obligado)}>Guardar cambios</Button>
-                      <Button variant="outline" onClick={() => setObligado(null)}>Quitar obligado</Button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground mb-4">No se ha agregado obligado solidario</p>
-                  {editable && (
-                    <Button onClick={() => setObligado({ nombre: "", telefono: "", correo: "", type: "fisica" })}>
-                      Agregar Obligado Solidario
-                    </Button>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ObligadoTab
+            value={obligado}
+            editable={editable}
+            onChange={setObligado}
+            onSave={() => saveSection("obligadoSolidario", obligado)}
+            onRemove={() => setObligado(null)}
+          />
         </TabsContent>
 
         {/* PROPIETARIO */}
         <TabsContent value="propietario" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Datos del Propietario</CardTitle>
-              <CardDescription>Información del propietario del inmueble</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-4">
-                <Label>Tipo de Persona:</Label>
-                <Select value={propietario.type} disabled>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fisica">Persona Física</SelectItem>
-                    <SelectItem value="moral">Persona Moral</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nombre / Razón Social</Label>
-                  <Input
-                    value={propietario.nombre || propietario.razonSocial || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropietario({ ...propietario, nombre: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Teléfono</Label>
-                  <Input
-                    value={propietario.telefono || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropietario({ ...propietario, telefono: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Correo</Label>
-                  <Input
-                    value={propietario.correo || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropietario({ ...propietario, correo: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {editable && (
-                <div className="pt-2">
-                  <Button onClick={() => saveSection("propietario", propietario)}>Guardar cambios</Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <PropietarioTab
+            value={propietario}
+            editable={editable}
+            onChange={setPropietario}
+            onSave={() => saveSection("propietario", propietario)}
+          />
         </TabsContent>
 
         {/* PROPIEDAD */}
         <TabsContent value="propiedad" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Información de la Propiedad</CardTitle>
-              <CardDescription>Datos del inmueble a rentar</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Tipo</Label>
-                  <Input
-                    value={propiedad.tipo || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, tipo: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Código Postal</Label>
-                  <Input
-                    value={propiedad.cp || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, cp: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Estado (ID o nombre)</Label>
-                  <Input
-                    value={propiedad.estado || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, estado: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ciudad (ID o nombre)</Label>
-                  <Input
-                    value={propiedad.ciudad || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, ciudad: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Colonia</Label>
-                  <Input
-                    value={propiedad.colonia || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, colonia: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Calle</Label>
-                  <Input
-                    value={propiedad.calle || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, calle: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Número</Label>
-                  <Input
-                    value={propiedad.numero || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, numero: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Interior</Label>
-                  <Input
-                    value={propiedad.interior || ""}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, interior: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Metros Cuadrados</Label>
-                  <Input
-                    type="number"
-                    value={Number.isFinite(propiedad.metros) ? propiedad.metros : (propiedad.metros ?? 0)}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, metros: Number(e.target.value) || 0 })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Renta Mensual</Label>
-                  <Input
-                    type="number"
-                    value={Number.isFinite(propiedad.renta) ? propiedad.renta : (propiedad.renta ?? 0)}
-                    readOnly={!editable}
-                    onChange={(e) => setPropiedad({ ...propiedad, renta: Number(e.target.value) || 0 })}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Referencia</Label>
-                <Textarea
-                  value={propiedad.referencia || ""}
-                  readOnly={!editable}
-                  onChange={(e) => setPropiedad({ ...propiedad, referencia: e.target.value })}
-                />
-              </div>
-
-              {editable && (
-                <div className="pt-2 flex gap-2">
-                  <Button onClick={() => saveSection("propiedad", propiedad)}>Guardar cambios</Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <PropiedadTab
+            value={propiedad}
+            editable={editable}
+            onChange={setPropiedad}
+            onSave={() => saveSection("propiedad", propiedad)}
+          />
         </TabsContent>
 
         {/* DOCUMENTOS */}
