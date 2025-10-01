@@ -10,15 +10,146 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { User, Building2, FileText, Search, CheckCircle, Calendar, Upload, Download, Eye } from "lucide-react"
+import {
+  User, Building2, FileText, Search, CheckCircle, Calendar,
+  Upload, Download, Eye
+} from "lucide-react"
 import type { Rental } from "@/types/rental"
+import { api } from "@/lib/auth"
+import { InquilinoTab } from "@/components/rental-tabs/InquilinoTab"
+import { ObligadoTab } from "@/components/rental-tabs/ObligadoTab"
+import { PropietarioTab } from "@/components/rental-tabs/PropietarioTab"
+import { PropiedadTab } from "@/components/rental-tabs/PropiedadTab"
 
 interface RentalProcessProps {
   rental: Rental
+  /** habilita edición y botones Guardar */
+  editable?: boolean
 }
 
-export function RentalProcess({ rental }: RentalProcessProps) {
+export function RentalProcess({ rental, editable = false }: RentalProcessProps) {
   const [activeTab, setActiveTab] = useState("inquilino")
+
+  // ===== Estados locales a partir del snapshot recibido =====
+  const [inquilino, setInquilino] = useState({ ...rental.inquilino })
+  const [propietario, setPropietario] = useState({ ...rental.propietario })
+  const [obligado, setObligado] = useState(rental.obligadoSolidario ? { ...rental.obligadoSolidario } as any : null)
+  const [propiedad, setPropiedad] = useState({
+    ...rental.propiedad,
+    referencia: (rental as any)?.propiedad?.referencia ?? "",
+  } as any)
+  const [formalizacion, setFormalizacion] = useState<any>((rental as any).formalizacion ?? {})
+  const [activacion, setActivacion] = useState<any>((rental as any).activacion ?? {})
+  const [documentos, setDocumentos] = useState<any[]>(Array.isArray((rental as any).documentos) ? (rental as any).documentos : [])
+
+  // ===== Helpers UI -> payload backend (snake_case) =====
+  function mapInquilinoToBackend(data: any) {
+    const isMoral = data?.type === "moral"
+    return {
+      inquilino: {
+        tipo_persona: isMoral ? "moral" : "fisica",
+        nombre_completo: isMoral ? undefined : (data?.nombre ?? ""),
+        razon_social: isMoral ? (data?.razonSocial ?? "") : undefined,
+        nombre_comercial: isMoral ? (data?.nombreComercial ?? "") : undefined,
+        representante_legal: isMoral ? (data?.representante ?? "") : undefined,
+        telefono: data?.telefono ?? "",
+        correo: data?.correo ?? "",
+      }
+    }
+  }
+
+  function mapPropietarioToBackend(data: any) {
+    const isMoral = data?.type === "moral"
+    return {
+      propietario: {
+        tipo_persona: isMoral ? "moral" : "fisica",
+        nombre_completo: isMoral ? undefined : (data?.nombre ?? ""),
+        razon_social: isMoral ? (data?.razonSocial ?? "") : undefined,
+        nombre_comercial: isMoral ? (data?.nombreComercial ?? "") : undefined,
+        representante_legal: isMoral ? (data?.representante ?? "") : undefined,
+        telefono: data?.telefono ?? "",
+        correo: data?.correo ?? "",
+      }
+    }
+  }
+
+  function mapObligadoToBackend(data: any) {
+    if (!data) return { obligado_solidario: null }
+    const isMoral = data?.type === "moral"
+    return {
+      obligado_solidario: {
+        tipo_persona: isMoral ? "moral" : "fisica",
+        nombre_completo: isMoral ? undefined : (data?.nombre ?? ""),
+        razon_social: isMoral ? (data?.razonSocial ?? "") : undefined,
+        nombre_comercial: isMoral ? (data?.nombreComercial ?? "") : undefined,
+        representante_legal: isMoral ? (data?.representante ?? "") : undefined,
+        telefono: data?.telefono ?? "",
+        correo: data?.correo ?? "",
+      }
+    }
+  }
+
+  function asNumberOrRaw(v: any) {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : v
+  }
+
+  function mapPropiedadToBackend(data: any) {
+    // UI: { tipo, cp, estado, ciudad, colonia, calle, numero, interior, metros, renta, referencia }
+    return {
+      propiedad: {
+        tipo: data?.tipo ?? "",
+        codigo_postal: data?.cp ?? "",
+        estado_id: asNumberOrRaw(data?.estado),
+        ciudad_id: asNumberOrRaw(data?.ciudad),
+        colonia: data?.colonia ?? "",
+        calle: data?.calle ?? "",
+        numero: data?.numero ?? "",
+        interior: data?.interior ?? "",
+        referencia: data?.referencia ?? "",
+        metros_cuadrados: data?.metros != null ? String(data?.metros) : undefined,
+        monto_renta: data?.renta != null ? String(data?.renta) : undefined,
+      }
+    }
+  }
+
+  function toBackendPayload(section: string, data: any) {
+    switch (section) {
+      case "inquilino": return mapInquilinoToBackend(data)
+      case "propietario": return mapPropietarioToBackend(data)
+      case "obligadoSolidario": return mapObligadoToBackend(data)
+      case "propiedad": return mapPropiedadToBackend(data)
+      case "documentos": return { documentos: Array.isArray(data) ? data : [] }
+      case "investigacion": return { investigacion: data }
+      case "formalizacion": return { formalizacion: data }
+      case "activacion": return { activacion: data }
+      default: return { [section]: data }
+    }
+  }
+
+  // ===== Guardado por sección usando PATCH /rentals/:id =====
+  async function saveSection(section: string, uiData: any) {
+    const id = rental.id
+    const payload = toBackendPayload(section, uiData)
+
+    try {
+      const res = await api(`/rentals/${encodeURIComponent(String(id))}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      alert("Cambios guardados")
+      return res
+    } catch (e: any) {
+      console.error("PATCH /rentals/:id error →", e)
+      alert("Error al guardar (PATCH): " + (e?.message ?? ""))
+      throw e
+    }
+  }
 
   const tabs = [
     { id: "inquilino", label: "Inquilino", icon: User },
@@ -33,11 +164,11 @@ export function RentalProcess({ rental }: RentalProcessProps) {
 
   return (
     <div className="space-y-6 max-h-[70vh] overflow-y-auto">
-      {/* Status Header */}
+      {/* Estado */}
       <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
         <div>
           <h3 className="font-semibold">Estado del Proceso</h3>
-          <Badge className="mt-1">En Proceso</Badge>
+          <Badge className="mt-1">{rental.status ?? "en_proceso"}</Badge>
         </div>
         <div className="text-right">
           <div className="text-sm text-muted-foreground">Creado: {rental.createdAt}</div>
@@ -45,7 +176,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
         </div>
       </div>
 
-      {/* Process Tabs */}
+      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8">
           {tabs.map((tab) => (
@@ -56,260 +187,48 @@ export function RentalProcess({ rental }: RentalProcessProps) {
           ))}
         </TabsList>
 
-        {/* Inquilino Tab */}
+        {/* INQUILINO */}
         <TabsContent value="inquilino" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Datos del Inquilino</CardTitle>
-              <CardDescription>Información personal o empresarial del inquilino</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-4">
-                <Label>Tipo de Persona:</Label>
-                <Select value={rental.inquilino.type}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fisica">Persona Física</SelectItem>
-                    <SelectItem value="moral">Persona Moral</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {rental.inquilino.type === "fisica" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nombre Completo</Label>
-                    <Input value={rental.inquilino.nombre || ""} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono</Label>
-                    <Input value={rental.inquilino.telefono || ""} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Correo Electrónico</Label>
-                    <Input value={rental.inquilino.correo || ""} />
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Razón Social</Label>
-                    <Input value={rental.inquilino.razonSocial || ""} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Nombre Comercial</Label>
-                    <Input value={rental.inquilino.nombreComercial || ""} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Representante Legal</Label>
-                    <Input value={rental.inquilino.representante || ""} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono</Label>
-                    <Input value={rental.inquilino.telefono || ""} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Correo Electrónico</Label>
-                    <Input value={rental.inquilino.correo || ""} />
-                  </div>
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="flex space-x-2">
-                <Button variant="outline">Enviar Solicitud</Button>
-                <Button variant="outline">Abrir Solicitud</Button>
-                <Button variant="outline">Ver Solicitud</Button>
-                <Button variant="outline">
-                  <Download className="mr-2 h-4 w-4" />
-                  Descargar Solicitud
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <InquilinoTab
+            value={inquilino}
+            editable={editable}
+            onChange={setInquilino}
+            onSave={() => saveSection("inquilino", inquilino)}
+          />
         </TabsContent>
 
-        {/* Obligado Solidario Tab */}
+        {/* OBLIGADO */}
         <TabsContent value="obligado" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Obligado Solidario</CardTitle>
-              <CardDescription>Información del obligado solidario (opcional)</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {rental.obligadoSolidario ? (
-                <>
-                  <div className="flex items-center space-x-4">
-                    <Label>Tipo de Persona:</Label>
-                    <Select value={rental.obligadoSolidario.type}>
-                      <SelectTrigger className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="fisica">Persona Física</SelectItem>
-                        <SelectItem value="moral">Persona Moral</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Nombre Completo</Label>
-                      <Input value={rental.obligadoSolidario.nombre || ""} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Teléfono</Label>
-                      <Input value={rental.obligadoSolidario.telefono || ""} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Correo Electrónico</Label>
-                      <Input value={rental.obligadoSolidario.correo || ""} />
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="flex space-x-2">
-                    <Button variant="outline">Enviar Solicitud</Button>
-                    <Button variant="outline">Abrir Solicitud</Button>
-                    <Button variant="outline">Ver Solicitud</Button>
-                    <Button variant="outline">
-                      <Download className="mr-2 h-4 w-4" />
-                      Descargar Solicitud
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground mb-4">No se ha agregado obligado solidario</p>
-                  <Button>Agregar Obligado Solidario</Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ObligadoTab
+            value={obligado}
+            editable={editable}
+            onChange={setObligado}
+            onSave={() => saveSection("obligadoSolidario", obligado)}
+            onRemove={() => setObligado(null)}
+          />
         </TabsContent>
 
-        {/* Propietario Tab */}
+        {/* PROPIETARIO */}
         <TabsContent value="propietario" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Datos del Propietario</CardTitle>
-              <CardDescription>Información del propietario del inmueble</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-4">
-                <Label>Tipo de Persona:</Label>
-                <Select value={rental.propietario.type}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fisica">Persona Física</SelectItem>
-                    <SelectItem value="moral">Persona Moral</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nombre Completo</Label>
-                  <Input value={rental.propietario.nombre || ""} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Teléfono</Label>
-                  <Input value={rental.propietario.telefono || ""} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Correo Electrónico</Label>
-                  <Input value={rental.propietario.correo || ""} />
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex space-x-2">
-                <Button variant="outline">Enviar Solicitud</Button>
-                <Button variant="outline">Abrir Solicitud</Button>
-                <Button variant="outline">Ver Solicitud</Button>
-                <Button variant="outline">
-                  <Download className="mr-2 h-4 w-4" />
-                  Descargar Solicitud
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <PropietarioTab
+            value={propietario}
+            editable={editable}
+            onChange={setPropietario}
+            onSave={() => saveSection("propietario", propietario)}
+          />
         </TabsContent>
 
-        {/* Propiedad Tab */}
+        {/* PROPIEDAD */}
         <TabsContent value="propiedad" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Información de la Propiedad</CardTitle>
-              <CardDescription>Datos del inmueble a rentar</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Tipo de Propiedad</Label>
-                  <Input value={rental.propiedad.tipo} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Código Postal</Label>
-                  <Input value={rental.propiedad.cp} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Estado</Label>
-                  <Input value={rental.propiedad.estado} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ciudad</Label>
-                  <Input value={rental.propiedad.ciudad} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Colonia</Label>
-                  <Input value={rental.propiedad.colonia} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Calle</Label>
-                  <Input value={rental.propiedad.calle} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Número</Label>
-                  <Input value={rental.propiedad.numero} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Interior</Label>
-                  <Input value={rental.propiedad.interior || ""} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Metros Cuadrados</Label>
-                  <Input type="number" value={rental.propiedad.metros} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Renta Mensual</Label>
-                  <Input type="number" value={rental.propiedad.renta} />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Referencias</Label>
-                <Textarea value={rental.propiedad.referencia || ""} placeholder="Referencias adicionales..." />
-              </div>
-
-              <Separator />
-
-              <div className="flex space-x-2">
-                <Button variant="outline">Seleccionar del Portal</Button>
-                <Button variant="outline">Agregar Nueva Propiedad</Button>
-              </div>
-            </CardContent>
-          </Card>
+          <PropiedadTab
+            value={propiedad}
+            editable={editable}
+            onChange={setPropiedad}
+            onSave={() => saveSection("propiedad", propiedad)}
+          />
         </TabsContent>
 
-        {/* Documentos Tab */}
+        {/* DOCUMENTOS */}
         <TabsContent value="documentos" className="space-y-4">
           <Card>
             <CardHeader>
@@ -317,150 +236,42 @@ export function RentalProcess({ rental }: RentalProcessProps) {
               <CardDescription>Documentos requeridos para el proceso de renta</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Documentos del Inquilino */}
-              <div>
-                <h4 className="font-semibold mb-3">Documentos del Inquilino</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="border rounded-lg p-4 space-y-2">
-                    <Label>Identificación</Label>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir
-                      </Button>
-                      <Button variant="outline" size="sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {["Identificación", "Comprobante de domicilio", "Comprobantes de ingresos"].map((label, idx) => (
+                  <div key={idx} className="border rounded-lg p-4 space-y-3">
+                    <Label>{label}</Label>
+                    <div className="flex gap-2">
+                      {editable && (
+                        <Button variant="outline" size="sm" onClick={() => alert("TODO: subir archivo")}>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Subir
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => alert("TODO: ver archivo")}>
                         <Eye className="mr-2 h-4 w-4" />
                         Ver
                       </Button>
-                    </div>
-                  </div>
-                  <div className="border rounded-lg p-4 space-y-2">
-                    <Label>Comprobante de Domicilio</Label>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver
+                      <Button variant="outline" size="sm" onClick={() => alert("TODO: descargar archivo")}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Descargar
                       </Button>
                     </div>
                   </div>
-                  <div className="border rounded-lg p-4 space-y-2">
-                    <Label>Comprobantes de Ingresos</Label>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
 
-              {/* Documentos del Obligado Solidario */}
-              {rental.obligadoSolidario && (
+              {editable && (
                 <div>
-                  <h4 className="font-semibold mb-3">Documentos del Obligado Solidario</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="border rounded-lg p-4 space-y-2">
-                      <Label>Identificación</Label>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm">
-                          <Upload className="mr-2 h-4 w-4" />
-                          Subir
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="border rounded-lg p-4 space-y-2">
-                      <Label>Comprobante de Domicilio</Label>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm">
-                          <Upload className="mr-2 h-4 w-4" />
-                          Subir
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="border rounded-lg p-4 space-y-2">
-                      <Label>Comprobantes de Ingresos</Label>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm">
-                          <Upload className="mr-2 h-4 w-4" />
-                          Subir
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                  <Button variant="default" onClick={() => saveSection("documentos", documentos)}>
+                    Guardar cambios
+                  </Button>
                 </div>
               )}
-
-              {/* Documentos del Propietario */}
-              <div>
-                <h4 className="font-semibold mb-3">Documentos del Propietario</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="border rounded-lg p-4 space-y-2">
-                    <Label>Identificación</Label>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="border rounded-lg p-4 space-y-2">
-                    <Label>Comprobante de Domicilio</Label>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="border rounded-lg p-4 space-y-2">
-                    <Label>Título de Propiedad</Label>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Investigación Tab */}
+        {/* INVESTIGACIÓN */}
         <TabsContent value="investigacion" className="space-y-4">
           <Card>
             <CardHeader>
@@ -471,37 +282,47 @@ export function RentalProcess({ rental }: RentalProcessProps) {
               <div className="text-center py-8">
                 <Search className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground mb-4">
-                  La investigación evalúa la solicitud de acuerdo a parámetros establecidos
+                  La investigación evalúa la solicitud de acuerdo a parámetros establecidos.
                 </p>
-                <Button className="bg-primary hover:bg-primary/90">
-                  <Search className="mr-2 h-4 w-4" />
-                  Generar Investigación
-                </Button>
+                {editable && (
+                  <Button className="bg-primary hover:bg-primary/90" onClick={() => alert("TODO: generar investigación")}>
+                    <Search className="mr-2 h-4 w-4" />
+                    Generar Investigación
+                  </Button>
+                )}
               </div>
 
-              {rental.investigacion && (
+              {(rental as any).investigacion && (
                 <div className="border rounded-lg p-4">
                   <h4 className="font-semibold mb-2">Resultado de la Investigación</h4>
-                  <div className="flex items-center space-x-4">
+                  <div className="flex items-center gap-6">
                     <div>
                       <Label>Índice de Riesgo</Label>
                       <div className="text-2xl font-bold text-primary">
-                        {rental.investigacion.indiceRiesgo || "N/A"}
+                        {(rental as any).investigacion?.indiceRiesgo ?? "N/A"}
                       </div>
                     </div>
                     <div>
-                      <Badge variant={rental.investigacion.completed ? "default" : "secondary"}>
-                        {rental.investigacion.completed ? "Completada" : "Pendiente"}
+                      <Badge variant={(rental as any).investigacion?.completed ? "default" : "secondary"}>
+                        {(rental as any).investigacion?.completed ? "Completada" : "Pendiente"}
                       </Badge>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {editable && (
+                <div className="pt-2">
+                  <Button onClick={() => saveSection("investigacion", { ...(rental as any).investigacion, updatedAt: new Date().toISOString() })}>
+                    Guardar cambios
+                  </Button>
                 </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Formalización Tab */}
+        {/* FORMALIZACIÓN */}
         <TabsContent value="formalizacion" className="space-y-4">
           <Card>
             <CardHeader>
@@ -511,16 +332,31 @@ export function RentalProcess({ rental }: RentalProcessProps) {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>Fecha de Inicio de Renta</Label>
-                  <Input type="date" value={rental.formalizacion?.fechaInicio || ""} />
+                  <Label>Fecha de Inicio</Label>
+                  <Input
+                    type="date"
+                    value={formalizacion.fechaInicio || ""}
+                    readOnly={!editable}
+                    onChange={(e) => setFormalizacion({ ...formalizacion, fechaInicio: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Fecha Fin de Renta</Label>
-                  <Input type="date" value={rental.formalizacion?.fechaFin || ""} />
+                  <Label>Fecha Fin</Label>
+                  <Input
+                    type="date"
+                    value={formalizacion.fechaFin || ""}
+                    readOnly={!editable}
+                    onChange={(e) => setFormalizacion({ ...formalizacion, fechaFin: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Fecha Prevista de Firma</Label>
-                  <Input type="date" value={rental.formalizacion?.fechaFirma || ""} />
+                  <Label>Fecha de Firma</Label>
+                  <Input
+                    type="date"
+                    value={formalizacion.fechaFirma || ""}
+                    readOnly={!editable}
+                    onChange={(e) => setFormalizacion({ ...formalizacion, fechaFirma: e.target.value })}
+                  />
                 </div>
               </div>
 
@@ -531,7 +367,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="space-y-2">
                     <Label>Oficina</Label>
-                    <Select>
+                    <Select disabled={!editable} value={formalizacion.oficina ?? ""} onValueChange={(v) => setFormalizacion({ ...formalizacion, oficina: v })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar oficina" />
                       </SelectTrigger>
@@ -544,7 +380,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                   </div>
                   <div className="space-y-2">
                     <Label>Abogado</Label>
-                    <Select>
+                    <Select disabled={!editable} value={formalizacion.abogado ?? ""} onValueChange={(v) => setFormalizacion({ ...formalizacion, abogado: v })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar abogado" />
                       </SelectTrigger>
@@ -556,7 +392,7 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                   </div>
                   <div className="space-y-2">
                     <Label>Producto</Label>
-                    <Select>
+                    <Select disabled={!editable} value={formalizacion.producto ?? ""} onValueChange={(v) => setFormalizacion({ ...formalizacion, producto: v })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar producto" />
                       </SelectTrigger>
@@ -567,13 +403,20 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                     </Select>
                   </div>
                 </div>
-                <Button className="bg-primary hover:bg-primary/90">Enviar a Póliza de Rentas</Button>
+                {editable && (
+                  <div className="flex gap-2">
+                    <Button className="bg-primary hover:bg-primary/90" onClick={() => alert("TODO: enviar a póliza de rentas")}>
+                      Enviar a Póliza de Rentas
+                    </Button>
+                    <Button variant="outline" onClick={() => saveSection("formalizacion", formalizacion)}>Guardar cambios</Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Activación Tab */}
+        {/* ACTIVACIÓN */}
         <TabsContent value="activacion" className="space-y-4">
           <Card>
             <CardHeader>
@@ -581,35 +424,63 @@ export function RentalProcess({ rental }: RentalProcessProps) {
               <CardDescription>Confirmación de datos y activación del proceso</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Datos de la Renta */}
               <div>
                 <h4 className="font-semibold mb-3">Datos de la Renta</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>Fecha de Inicio</Label>
-                    <Input type="date" value={rental.activacion?.fechaInicio || ""} />
+                    <Input
+                      type="date"
+                      value={activacion.fechaInicio || ""}
+                      readOnly={!editable}
+                      onChange={(e) => setActivacion({ ...activacion, fechaInicio: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label>Plazo del Contrato (meses)</Label>
-                    <Input type="number" value={rental.activacion?.plazoMeses || ""} />
+                    <Label>Plazo (meses)</Label>
+                    <Input
+                      type="number"
+                      value={activacion.plazoMeses ?? ""}
+                      readOnly={!editable}
+                      onChange={(e) => setActivacion({ ...activacion, plazoMeses: Number(e.target.value) || 0 })}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Fecha de Fin</Label>
-                    <Input type="date" value={rental.activacion?.fechaFin || ""} />
+                    <Input
+                      type="date"
+                      value={activacion.fechaFin || ""}
+                      readOnly={!editable}
+                      onChange={(e) => setActivacion({ ...activacion, fechaFin: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label>Monto de la Renta</Label>
-                    <Input type="number" value={rental.activacion?.montoRenta || ""} />
+                    <Label>Monto Renta</Label>
+                    <Input
+                      type="number"
+                      value={activacion.montoRenta ?? ""}
+                      readOnly={!editable}
+                      onChange={(e) => setActivacion({ ...activacion, montoRenta: Number(e.target.value) || 0 })}
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label>Monto de la Comisión</Label>
-                    <Input type="number" value={rental.activacion?.montoComision || ""} />
+                    <Label>Monto Comisión</Label>
+                    <Input
+                      type="number"
+                      value={activacion.montoComision ?? ""}
+                      readOnly={!editable}
+                      onChange={(e) => setActivacion({ ...activacion, montoComision: Number(e.target.value) || 0 })}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Tipo de Comisión</Label>
-                    <Select value={rental.activacion?.tipoComision || ""}>
+                    <Select
+                      disabled={!editable}
+                      value={activacion.tipoComision ?? ""}
+                      onValueChange={(v) => setActivacion({ ...activacion, tipoComision: v })}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Seleccionar" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="completa">Comisión Completa</SelectItem>
@@ -618,14 +489,23 @@ export function RentalProcess({ rental }: RentalProcessProps) {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Monto Neto de Comisión</Label>
-                    <Input type="number" value={rental.activacion?.montoNetoComision || ""} />
+                    <Label>Monto Neto Comisión</Label>
+                    <Input
+                      type="number"
+                      value={activacion.montoNetoComision ?? ""}
+                      readOnly={!editable}
+                      onChange={(e) => setActivacion({ ...activacion, montoNetoComision: Number(e.target.value) || 0 })}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Forma de Cobro</Label>
-                    <Select value={rental.activacion?.formaCobroComision || ""}>
+                    <Select
+                      disabled={!editable}
+                      value={activacion.formaCobroComision ?? ""}
+                      onValueChange={(v) => setActivacion({ ...activacion, formaCobroComision: v })}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Seleccionar" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="efectivo">Efectivo</SelectItem>
@@ -638,55 +518,19 @@ export function RentalProcess({ rental }: RentalProcessProps) {
 
               <Separator />
 
-              {/* Datos del Propietario */}
-              <div>
-                <h4 className="font-semibold mb-3">Confirmación - Propietario</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nombre</Label>
-                    <Input value={rental.propietario.nombre || ""} readOnly />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono</Label>
-                    <Input value={rental.propietario.telefono || ""} readOnly />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Correo</Label>
-                    <Input value={rental.propietario.correo || ""} readOnly />
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Datos del Inquilino */}
-              <div>
-                <h4 className="font-semibold mb-3">Confirmación - Inquilino</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nombre</Label>
-                    <Input value={rental.inquilino.nombre || rental.inquilino.razonSocial || ""} readOnly />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono</Label>
-                    <Input value={rental.inquilino.telefono || ""} readOnly />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Correo</Label>
-                    <Input value={rental.inquilino.correo || ""} readOnly />
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="flex space-x-4">
-                <Button className="bg-primary hover:bg-primary/90" size="lg">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Activar Renta
-                </Button>
-                {rental.activacion?.activated && (
-                  <Button variant="outline" size="lg">
+              <div className="flex flex-wrap gap-3">
+                {editable && (
+                  <>
+                    <Button className="bg-primary hover:bg-primary/90" onClick={() => alert("TODO: activar renta en backend")}>
+                      Activar Renta
+                    </Button>
+                    <Button variant="outline" onClick={() => saveSection("activacion", activacion)}>
+                      Guardar cambios
+                    </Button>
+                  </>
+                )}
+                {(activacion as any)?.activated && (
+                  <Button variant="secondary">
                     <Building2 className="mr-2 h-4 w-4" />
                     Generar Administración
                   </Button>

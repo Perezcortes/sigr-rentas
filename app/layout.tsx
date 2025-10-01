@@ -4,24 +4,21 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
   title: "Sistema Inteligente de Gestión Rentas.com",
   description: "Sistema de gestión integral para propiedades en renta",
   generator: "v0.app",
   icons: {
-    icon: [
-      { url: "/sigr_images/favicon.png", type: "image/png", sizes: "32x32" },
-    ],
+    icon: [{ url: "/sigr_images/favicon.png", type: "image/png", sizes: "32x32" }],
     shortcut: ["/sigr_images/favicon.png"],
   },
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
       <head>
@@ -34,7 +31,12 @@ html {
         `}</style>
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+
+        {/* Monta el sistema de toasts UNA sola vez en la app */}
+        <Toaster />
       </body>
     </html>
   )

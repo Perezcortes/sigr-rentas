@@ -13,13 +13,12 @@ type AuthAction =
   | { type: "RESTORE_SESSION"; payload: User }
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<boolean | { ok: false; error: any }>
   logout: () => void
   hasPermission: (perm: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
 
 type NormalizedRole =
   | "administrador"
@@ -126,7 +125,6 @@ function normalizeUser(serverUser: any): User {
   return normalized as User
 }
 
-
 function authReducer(state: AuthState, action: AuthAction): AuthState {
   switch (action.type) {
     case "LOGIN_START":
@@ -143,7 +141,6 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       return state
   }
 }
-
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, {
@@ -201,21 +198,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("storage", onStorage)
   }, [])
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean | { ok: false; error: any }> => {
     dispatch({ type: "LOGIN_START" })
     try {
       const serverUser = await authenticateUser(email, password)
       if (!serverUser) {
         dispatch({ type: "LOGIN_FAILURE" })
-        throw new Error("Credenciales inválidas")
+        return { ok: false, error: new Error("Credenciales inválidas") }
       }
       const normalized = normalizeUser(serverUser)
       localStorage.setItem("rentas_user", JSON.stringify(normalized))
       dispatch({ type: "LOGIN_SUCCESS", payload: normalized })
       return true
-    } catch (err) {
+    } catch (error) {
       dispatch({ type: "LOGIN_FAILURE" })
-      throw err
+      return { ok: false, error }
     }
   }
 
