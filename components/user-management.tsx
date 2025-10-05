@@ -1,41 +1,23 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Users, Plus, Edit, Trash2, RefreshCw, Building2, Mail, Shield } from "lucide-react"
 import type { UserRole } from "@/types/auth"
 import { useToast } from "@/components/ui/use-toast"
 import Hashids from "hashids"
 import { useAuth } from "@/contexts/auth-context"
-
-/* =================== UI helpers =================== */
-const INPUT_FOCUS =
-  "placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-secondary focus-visible:border-secondary"
-const SELECT_FOCUS = "focus:ring-2 focus:ring-secondary focus:border-secondary"
+import { UserManagementHeader } from "./user-management/UserManagementHeader"
+import { UserMetrics } from "./user-management/UserMetrics"
+import { UserTable } from "./user-management/UserTable"
+import { UserDialog } from "./user-management/UserDialog"
+import type {
+  ApiRole,
+  FormData,
+  FormErrors,
+  Office,
+  OfficeId,
+  SelectedOfficePill,
+  SystemUser,
+} from "./user-management/types"
 
 /* =================== API base =================== */
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"
@@ -53,28 +35,6 @@ const ROLE_ID_BY_ROLE: Record<UserRole, number> = {
 const ROLE_BY_ID: Record<number, UserRole> = Object.fromEntries(
   Object.entries(ROLE_ID_BY_ROLE).map(([k, v]) => [v, k as UserRole])
 ) as Record<number, UserRole>
-
-interface SystemUser {
-  id: string
-  name: string
-  email: string
-  role: UserRole
-  roleName: string
-  oficina: string
-  permissions: string[]
-  isActive: boolean
-  lastLogin: string
-}
-
-type OfficeId = string | number
-type Office = {
-  id: OfficeId
-  nombre: string
-  clave?: string
-  ciudad?: string
-  estado?: string
-  activo?: boolean
-}
 
 /* =================== Hashids (Oficinas) =================== */
 const SALT = process.env.NEXT_PUBLIC_HASHIDS_SALT ?? ""
@@ -104,7 +64,6 @@ if (O_SALT || SALT) {
   for (const s of salts) for (const m of mins) CANDIDATES_BASE.push(makeCandidate(s, m, ALPH || undefined))
 }
 let ACTIVE_DECODER: Hashids | null = CANDIDATES_BASE.length ? CANDIDATES_BASE[0].inst : null
-let ACTIVE_DECODER_DESC = O_SALT || SALT ? `SALT=${O_SALT || SALT} MIN=${MIN}${ALPH ? " ALPH(custom)" : ""}` : "none"
 
 function isNumericString(s: string) { return /^\d+$/.test(s) }
 function decodeWith(h: Hashids | null, hid: string): number | null {
@@ -125,7 +84,6 @@ function tryDecodeWithCandidates(hid: string, candidates: HashidsCandidate[]): n
     const n = decodeWith(c.inst, hid)
     if (typeof n === "number" && n > 0) {
       ACTIVE_DECODER = c.inst
-      ACTIVE_DECODER_DESC = `SALT=${c.salt} MIN=${c.min}${c.alph ? " ALPH(custom)" : ""}`
       return n
     }
   }
@@ -297,14 +255,6 @@ function genTempPassword() {
 }
 
 /* =================== Tipos para roles (lista del backend) =================== */
-type ApiRole = {
-  uid?: string
-  id?: number
-  nombre?: string
-  descripcion?: string
-  is_active?: boolean
-}
-
 /* =================== Validaciones =================== */
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const hasUpper = (s: string) => /[A-Z]/.test(s)
@@ -315,19 +265,6 @@ const phoneOk = (s: string) => {
   const d = cleanPhone(s)
   return d.length >= 10 && d.length <= 15
 }
-
-type FormData = {
-  nombres: string
-  primer_apellido: string
-  segundo_apellido: string
-  correo: string
-  telefono: string
-  whatsapp: string
-  role: UserRole
-  isActive: boolean
-  password: string
-}
-type FormErrors = Partial<Record<keyof FormData, string>> & { roleUid?: string }
 
 /* =================== Helper clave: role_id numérico =================== */
 function ensureNumericRoleId(
@@ -364,7 +301,6 @@ export function UserManagement() {
   const [officesLoading, setOfficesLoading] = useState(false)
   const [officeSearch, setOfficeSearch] = useState("")
   const [selectedOfficeIds, setSelectedOfficeIds] = useState<OfficeId[]>([])
-  const [decoderInfo, setDecoderInfo] = useState(ACTIVE_DECODER_DESC)
 
   // === roles ===
   const [roles, setRoles] = useState<ApiRole[]>([])
@@ -404,6 +340,14 @@ export function UserManagement() {
       [o.nombre, o.clave, o.ciudad, o.estado].filter(Boolean).some((v) => String(v).toLowerCase().includes(q))
     )
   }, [officeSearch, offices])
+
+  const selectedOfficePills = useMemo<SelectedOfficePill[]>(() => {
+    return selectedOfficeIds.map((id) => {
+      const match = offices.find((office) => isOfficeSelected([office.id], id))
+      const label = match?.nombre ?? (typeof id === "string" ? id : `#${id}`)
+      return { id, label }
+    })
+  }, [selectedOfficeIds, offices])
 
   const [formData, setFormData] = useState<FormData>({
     nombres: "",
@@ -535,7 +479,6 @@ export function UserManagement() {
         const probe = decodeOfficeId(s)
         if (typeof probe === "number" && probe > 0) break
       }
-      setDecoderInfo(ACTIVE_DECODER_DESC)
       setOffices(mapped)
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "No se pudieron cargar las oficinas", variant: "destructive" })
@@ -844,6 +787,25 @@ export function UserManagement() {
   }
   const clearAllOffices = () => setSelectedOfficeIds([])
 
+  const handleRoleSelect = (uid: string) => {
+    setSelectedRoleUid(uid)
+    const found = roles.find((r) => (r.uid ?? String(r.id)) === uid)
+    setSelectedRoleId(typeof found?.id === "number" ? found.id : undefined)
+    if (found?.nombre) setAndValidate({ role: normalizeRoleToUserRole(found.nombre) })
+  }
+
+  const handleToggleActive = (value: boolean) => {
+    setFormData((prev) => ({ ...prev, isActive: value }))
+  }
+
+  const handleOfficeSearchChange = (value: string) => setOfficeSearch(value)
+
+  const handleRemoveOffice = (id: OfficeId) => {
+    setSelectedOfficeIds((prev) => mergeOfficeIds(prev, id, false))
+  }
+
+  const handleCancelDialog = () => setIsDialogOpen(false)
+
   /* ====== Métricas ====== */
   const totalUsers = users.length
   const activos = users.filter(u => u.isActive).length
@@ -858,409 +820,59 @@ export function UserManagement() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Gestión de Usuarios</h2>
-          <p className="text-muted-foreground">Administra los usuarios y sus permisos en el sistema</p>
-          {/* <p className="mt-2 text-xs text-muted-foreground">Decoder oficinas: {decoderInfo}</p> */}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchUsersFromApi} disabled={loading || submitting}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            {loading ? "Cargando..." : "Recargar"}
-          </Button>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button
-                onClick={handleAddUser}
-                className="bg-primary hover:bg-primary/90"
-                disabled={submitting || !canCreateUsers}
-                title={!canCreateUsers ? "Tu rol no puede crear usuarios" : undefined}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Usuario
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[900px] max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{editingUser ? "Editar Usuario" : "Nuevo Usuario"}</DialogTitle>
-                <DialogDescription>
-                  {editingUser ? "Modifica los datos y oficinas del usuario" : "Completa la información para crear un nuevo usuario"}
-                </DialogDescription>
-              </DialogHeader>
+      <UserManagementHeader
+        loading={loading}
+        submitting={submitting}
+        onRefresh={fetchUsersFromApi}
+        onAddUser={handleAddUser}
+        canCreateUsers={canCreateUsers}
+      />
 
-              <div className="grid gap-4 py-4">
-                {/* nombre */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="nombres">Nombres</Label>
-                    <Input
-                      id="nombres"
-                      className={`${INPUT_FOCUS} ${errors.nombres ? "border-red-500" : ""}`}
-                      value={formData.nombres}
-                      onChange={(e) => setAndValidate({ nombres: e.target.value })}
-                      placeholder="Juan Carlos"
-                      aria-invalid={!!errors.nombres}
-                    />
-                    {errors.nombres && <p className="text-xs text-red-600">{errors.nombres}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="primer_apellido">Primer apellido</Label>
-                    <Input
-                      id="primer_apellido"
-                      className={`${INPUT_FOCUS} ${errors.primer_apellido ? "border-red-500" : ""}`}
-                      value={formData.primer_apellido}
-                      onChange={(e) => setAndValidate({ primer_apellido: e.target.value })}
-                      placeholder="Pérez"
-                      aria-invalid={!!errors.primer_apellido}
-                    />
-                    {errors.primer_apellido && <p className="text-xs text-red-600">{errors.primer_apellido}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="segundo_apellido">Segundo apellido</Label>
-                    <Input
-                      id="segundo_apellido"
-                      className={`${INPUT_FOCUS} ${errors.segundo_apellido ? "border-red-500" : ""}`}
-                      value={formData.segundo_apellido}
-                      onChange={(e) => setAndValidate({ segundo_apellido: e.target.value })}
-                      placeholder="García"
-                      aria-invalid={!!errors.segundo_apellido}
-                    />
-                    {errors.segundo_apellido && <p className="text-xs text-red-600">{errors.segundo_apellido}</p>}
-                  </div>
-                </div>
+      <UserDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        submitting={submitting}
+        editingUser={editingUser}
+        formData={formData}
+        errors={errors}
+        onFieldChange={setAndValidate}
+        onToggleActive={handleToggleActive}
+        roles={roles}
+        rolesLoading={rolesLoading}
+        selectedRoleUid={selectedRoleUid}
+        onRoleSelect={handleRoleSelect}
+        roleError={errors.roleUid}
+        officeSearch={officeSearch}
+        onOfficeSearchChange={handleOfficeSearchChange}
+        officesLoading={officesLoading}
+        onReloadOffices={fetchOfficesFromApi}
+        filteredOffices={filteredOffices}
+        selectedOfficeIds={selectedOfficeIds}
+        selectedOfficePills={selectedOfficePills}
+        onToggleOffice={toggleOffice}
+        onToggleAllFiltered={toggleAllFiltered}
+        onClearOffices={clearAllOffices}
+        onRemoveOffice={handleRemoveOffice}
+        isOfficeSelected={isOfficeSelected}
+        onSubmit={handleSaveUser}
+        onCancel={handleCancelDialog}
+      />
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="correo">Correo</Label>
-                    <Input
-                      id="correo"
-                      type="email"
-                      className={`${INPUT_FOCUS} ${errors.correo ? "border-red-500" : ""}`}
-                      value={formData.correo}
-                      onChange={(e) => setAndValidate({ correo: e.target.value })}
-                      placeholder="usuario@sigr.com"
-                      aria-invalid={!!errors.correo}
-                    />
-                    {errors.correo && <p className="text-xs text-red-600">{errors.correo}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="telefono">Teléfono</Label>
-                    <Input
-                      id="telefono"
-                      inputMode="tel"
-                      maxLength={15}
-                      className={`${INPUT_FOCUS} ${errors.telefono ? "border-red-500" : ""}`}
-                      value={formData.telefono}
-                      onChange={(e) => setAndValidate({ telefono: e.target.value })}
-                      placeholder="9512345678"
-                      aria-invalid={!!errors.telefono}
-                    />
-                    {errors.telefono && <p className="text-xs text-red-600">{errors.telefono}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="whatsapp">WhatsApp</Label>
-                    <Input
-                      id="whatsapp"
-                      inputMode="tel"
-                      maxLength={15}
-                      className={`${INPUT_FOCUS} ${errors.whatsapp ? "border-red-500" : ""}`}
-                      value={formData.whatsapp}
-                      onChange={(e) => setAndValidate({ whatsapp: e.target.value })}
-                      placeholder="9512345678"
-                      aria-invalid={!!errors.whatsapp}
-                    />
-                    {errors.whatsapp && <p className="text-xs text-red-600">{errors.whatsapp}</p>}
-                  </div>
-                </div>
+      <UserMetrics
+        totalUsers={totalUsers}
+        activos={activos}
+        inactivos={inactivos}
+        recientes7d={recientes7d}
+      />
 
-                {/* rol (desde API) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Rol</Label>
-                    <Select
-                      value={selectedRoleUid}
-                      onValueChange={(uid) => {
-                        setSelectedRoleUid(uid)
-                        const found = roles.find(r => (r.uid ?? String(r.id)) === uid)
-                        setSelectedRoleId(typeof found?.id === "number" ? found.id : undefined)
-                        if (found?.nombre) setAndValidate({ role: normalizeRoleToUserRole(found.nombre) })
-                      }}
-                      disabled={rolesLoading || roles.length === 0}
-                    >
-                      <SelectTrigger className={`${SELECT_FOCUS} ${errors.roleUid ? "border-red-500" : ""}`}>
-                        <SelectValue placeholder={rolesLoading ? "Cargando roles…" : "Selecciona un rol"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roles.length === 0 && !rolesLoading && (
-                          <div className="px-2 py-2 text-sm text-muted-foreground">Sin roles</div>
-                        )}
-                        {roles.map((r) => {
-                          const value = r.uid ?? String(r.id ?? "")
-                          const label = r.nombre ?? "(Sin nombre)"
-                          return (
-                            <SelectItem key={value} value={value}>
-                              {label}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-                    {errors.roleUid && <p className="text-xs text-red-600">{errors.roleUid}</p>}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="isActive">Activo</Label>
-                    <div className="h-10 flex items-center">
-                      <Switch
-                        id="isActive"
-                        checked={formData.isActive}
-                        onCheckedChange={(v) => setFormData({ ...formData, isActive: !!v })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password {editingUser ? "(deja vacío para no cambiar)" : "(temporal)"}</Label>
-                    <Input
-                      id="password"
-                      className={`${INPUT_FOCUS} ${errors.password ? "border-red-500" : ""}`}
-                      type="text"
-                      value={formData.password}
-                      onChange={(e) => setAndValidate({ password: e.target.value })}
-                      placeholder={editingUser ? "Opcional" : "Se generó automáticamente"}
-                      aria-invalid={!!errors.password}
-                    />
-                    {errors.password ? (
-                      <p className="text-xs text-red-600">{errors.password}</p>
-                    ) : (
-                      !editingUser && (
-                        <ul className="text-xs text-muted-foreground list-disc ml-4">
-                          <li>8+ caracteres</li>
-                          <li>1 mayúscula</li>
-                          <li>1 número</li>
-                          <li>1 carácter especial</li>
-                        </ul>
-                      )
-                    )}
-                  </div>
-                </div>
-
-                {/* oficinas - dropdown */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <Label>Oficinas</Label>
-                    </div>
-                  </div>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="outline" className="w-full justify-between">
-                        <span className="truncate">
-                          {selectedOfficeIds.length > 0
-                            ? `${selectedOfficeIds.length} oficina${selectedOfficeIds.length > 1 ? "s" : ""} seleccionada${selectedOfficeIds.length > 1 ? "s" : ""}`
-                            : "Selecciona oficinas"}
-                        </span>
-                        <Building2 className="ml-2 h-4 w-4 opacity-60" />
-                      </Button>
-                    </DropdownMenuTrigger>
-
-                    <DropdownMenuContent className="w-[520px] p-0">
-                      <div className="sticky top-0 z-10 space-y-2 border-b bg-background p-3">
-                        <DropdownMenuLabel className="px-0">Selecciona oficinas</DropdownMenuLabel>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            className={INPUT_FOCUS}
-                            placeholder="Buscar por nombre/clave/ciudad/estado…"
-                            value={officeSearch}
-                            onChange={(e) => setOfficeSearch(e.target.value)}
-                          />
-                          <Button variant="outline" size="sm" onClick={fetchOfficesFromApi} disabled={officesLoading}>
-                            <RefreshCw className={`mr-2 h-3 w-3 ${officesLoading ? "animate-spin" : ""}`} />
-                            {officesLoading ? "Cargando…" : "Recargar"}
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button type="button" size="sm" variant="secondary" onClick={() => toggleAllFiltered(true)} disabled={officesLoading}>
-                            Seleccionar filtradas
-                          </Button>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => toggleAllFiltered(false)} disabled={officesLoading}>
-                            Quitar filtradas
-                          </Button>
-                          <Button type="button" size="sm" variant="ghost" onClick={clearAllOffices} disabled={officesLoading}>
-                            Limpiar todo
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="max-h-72 overflow-auto p-2">
-                        {officesLoading ? (
-                          <p className="px-2 py-3 text-sm text-muted-foreground">Cargando oficinas…</p>
-                        ) : filteredOffices.length === 0 ? (
-                          <p className="px-2 py-3 text-sm text-muted-foreground">No se encontraron oficinas.</p>
-                        ) : (
-                          <ul className="space-y-1">
-                            {filteredOffices.map((o) => {
-                              const checked = isOfficeSelected(selectedOfficeIds, o.id)
-                              return (
-                                <li key={String(o.id)}>
-                                  <DropdownMenuItem
-                                    onSelect={(e) => e.preventDefault()}
-                                    className="cursor-default data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground"
-                                  >
-                                    <label className="flex w-full items-center gap-2">
-                                      <Checkbox checked={checked} onCheckedChange={(v) => toggleOffice(o.id, !!v)} />
-                                      <span className="text-sm">
-                                        <span className="font-medium">{o.nombre}</span>
-                                        {o.clave ? <span className="text-muted-foreground"> · {o.clave}</span> : null}
-                                        {(o.ciudad || o.estado) ? (
-                                          <span className="text-muted-foreground">
-                                            {" "}· {o.ciudad ?? ""}{o.ciudad && o.estado ? ", " : ""}{o.estado ?? ""}
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                    </label>
-                                  </DropdownMenuItem>
-                                </li>
-                              )
-                            })}
-                          </ul>
-                        )}
-                      </div>
-
-                      <DropdownMenuSeparator />
-                      <div className="flex flex-wrap gap-2 p-3">
-                        {selectedOfficeIds.length === 0 ? (
-                          <span className="text-xs text-muted-foreground">Ninguna seleccionada</span>
-                        ) : (
-                          selectedOfficeIds
-                            .map((id) => offices.find((o) => isOfficeSelected([id], o.id)))
-                            .filter(Boolean)
-                            .map((o) => (
-                              <span key={String((o as Office).id)} className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
-                                {(o as Office).nombre}
-                                <button
-                                  type="button"
-                                  className="ml-1 text-muted-foreground hover:text-foreground"
-                                  onClick={() => setSelectedOfficeIds((prev) => mergeOfficeIds(prev, (o as Office).id, false))}
-                                  aria-label={`Quitar ${(o as Office).nombre}`}
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))
-                        )}
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-                <Button onClick={handleSaveUser} disabled={submitting}>
-                  {submitting ? "Guardando..." : editingUser ? "Actualizar" : "Crear"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* Métricas */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total usuarios</CardDescription>
-            <CardTitle className="text-2xl">{totalUsers}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Activos</CardDescription>
-            <CardTitle className="text-2xl">{activos}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Inactivos</CardDescription>
-            <CardTitle className="text-2xl">{inactivos}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Accesos últimos 7 días</CardDescription>
-            <CardTitle className="text-2xl">{recientes7d}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* Tabla */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Usuarios
-          </CardTitle>
-          <CardDescription>Administra usuarios, roles y oficinas asignadas.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Correo</TableHead>
-                  {/* <TableHead>Rol</TableHead> */}
-                  <TableHead>Oficina(s)</TableHead>
-                  <TableHead>Último acceso</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id} className="hover:bg-secondary/20">
-                    <TableCell className="font-medium">{u.name}</TableCell>
-                    <TableCell className="flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      {u.email}
-                    </TableCell>
-                    <TableCell className="flex items-center gap-1">
-                      <Shield className="h-4 w-4 text-muted-foreground" />
-                      {u.roleName}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{u.oficina || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{u.lastLogin}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {/* Botones condicionados por jerarquía */}
-                      {canManageTarget(creatorRole as UserRole, u.role) && (
-                        <Button variant="outline" size="sm" onClick={() => handleEditUser(u)}>
-                        <Edit className="h-4 w-4 mr-1" /> Editar
-                        </Button>
-                      )}
-                      {canManageTarget(creatorRole as UserRole, u.role) && (
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(u.id)}>
-                        <Trash2 className="h-4 w-4 mr-1" /> Eliminar
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {users.length === 0 && !loading && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No hay usuarios para mostrar.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <UserTable
+        users={users}
+        loading={loading}
+        creatorRole={creatorRole as UserRole}
+        canManageTarget={canManageTarget}
+        onEdit={handleEditUser}
+        onDelete={handleDeleteUser}
+      />
     </div>
   )
 }
