@@ -4,29 +4,14 @@ import { useEffect, useMemo, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { api, hasPermission as hasPermLib } from "@/lib/auth"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Shield, RefreshCw, Plus, Edit, Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { RoleManagementHeader } from "./role-management/RoleManagementHeader"
+import { RoleMetrics } from "./role-management/RoleMetrics"
+import { RoleTable } from "./role-management/RoleTable"
+import { RoleDialog } from "./role-management/RoleDialog"
+import type { PermissionGroup, PermissionItem, RoleForm, RoleRow } from "./role-management/types"
 
 import Hashids from "hashids"
-
-const PH = "placeholder:text-muted-foreground/60"
-const CB = "border-secondary"
 
 // hashids
 const SALT  = process.env.NEXT_PUBLIC_HASHIDS_SALT ?? ""
@@ -97,18 +82,6 @@ function ensureNumericPermissions(hids: string[]): number[] {
 }
 
 type RawRole = any
-interface RoleRow {
-  id: string
-  nombre: string
-  descripcion: string
-  permisosCount: number
-}
-interface PermissionItem {
-  hid: string       
-  nid: number | null 
-  nombre: string
-  descripcion?: string | null
-}
 function toRoleRow(r: RawRole): RoleRow {
   const id = String(r?.id ?? r?.role_id ?? r?.uuid ?? crypto.randomUUID())
   const nombre = r?.nombre ?? r?.name ?? r?.display_name ?? r?.slug ?? "Sin nombre"
@@ -139,7 +112,7 @@ export function RoleManagement() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RoleRow | null>(null)
 
-  const [form, setForm] = useState({ nombre: "", descripcion: "" })
+  const [form, setForm] = useState<RoleForm>({ nombre: "", descripcion: "" })
 
   // permisos
   const [permissions, setPermissions] = useState<PermissionItem[]>([])
@@ -147,7 +120,6 @@ export function RoleManagement() {
   const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set())
   const [permLoading, setPermLoading] = useState(false)
   const [permQuery, setPermQuery] = useState("")
-  const [decoderInfo, setDecoderInfo] = useState(ACTIVE_DECODER_DESC)
   const [permsLoaded, setPermsLoaded] = useState(false)
   const selectedCount = selectedPerms.size
 
@@ -199,7 +171,6 @@ export function RoleManagement() {
         if (typeof it.nid === "number") _byNid.set(it.nid, it)
       }
       setByNid(_byNid)
-      setDecoderInfo(ACTIVE_DECODER_DESC)
       setPermsLoaded(true)
       if (typeof window !== "undefined") {
         console.info("[roles] Hashids decoder activo:", ACTIVE_DECODER_DESC)
@@ -227,7 +198,7 @@ export function RoleManagement() {
   }
   useEffect(() => { fetchRoles() }, [canView]) 
 
-  const groupedPermissions = useMemo(() => {
+  const groupedPermissions = useMemo<PermissionGroup[]>(() => {
     const q = permQuery.trim().toLowerCase()
     const filtered = q
       ? permissions.filter(p =>
@@ -243,11 +214,14 @@ export function RoleManagement() {
       groups[prefix].push(p)
     }
     return Object.entries(groups)
-      .sort(([a],[b]) => a.localeCompare(b))
-      .map(([k, arr]) => [k, arr.sort((a,b) => a.nombre.localeCompare(b.nombre))] as const)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, arr]) => {
+        const sorted = [...arr].sort((a, b) => a.nombre.localeCompare(b.nombre))
+        return [k, sorted] as PermissionGroup
+      })
   }, [permissions, permQuery])
 
-  function setGroup(groupKey: string, checked: boolean) {
+  function toggleGroupSelection(groupKey: string, checked: boolean) {
     setSelectedPerms((prev) => {
       const next = new Set(prev)
       const grp = groupedPermissions.find(([g]) => g === groupKey)
@@ -369,6 +343,18 @@ export function RoleManagement() {
     editing ? updateRole(editing.id) : createRole()
   }
 
+  const handleFormChange = (patch: Partial<RoleForm>) => {
+    setForm((prev) => ({ ...prev, ...patch }))
+  }
+
+  const handlePermQueryChange = (value: string) => setPermQuery(value)
+
+  const handleTogglePermission = (hid: string, checked: boolean) => togglePerm(hid, checked)
+
+  const handleToggleGroup = (groupKey: string, checked: boolean) => toggleGroupSelection(groupKey, checked)
+
+  const handleCancelDialog = () => setIsDialogOpen(false)
+
   // cards
   const totalRoles = roles.length
   const rolesSinPermisos = roles.filter(r => r.permisosCount === 0).length
@@ -376,220 +362,49 @@ export function RoleManagement() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Gestión de Roles</h2>
-          {/* <p className="text-muted-foreground">
-            Ver requiere <code>gestionar_roles</code> o <code>ver_permisos</code>. CRUD sólo con <code>gestionar_roles</code>.
-          </p>
-          {SALT ? (
-            <p className="mt-2 text-xs text-muted-foreground">Decoder: {decoderInfo}</p>
-          ) : (
-            <p className="mt-2 text-sm text-amber-600">
-              Falta <code>NEXT_PUBLIC_HASHIDS_SALT</code>. No se podrán convertir permisos hasheados.
-            </p>
-          )} */}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchRoles} disabled={loading || submitting}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            {loading ? "Cargando..." : "Recargar"}
-          </Button>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={openCreate} className="bg-primary hover:bg-primary/90" disabled={!canCreate || submitting}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Rol
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[920px]">
-              <DialogHeader>
-                <DialogTitle>{editing ? "Editar Rol" : "Nuevo Rol"}</DialogTitle>
-                <DialogDescription>
-                  {editing ? "Actualiza el rol y sus permisos." : "Crea un rol y selecciona los permisos que aplican."}
-                </DialogDescription>
-              </DialogHeader>
+      <RoleManagementHeader
+        loading={loading}
+        submitting={submitting}
+        canCreate={canCreate}
+        onRefresh={fetchRoles}
+        onCreate={openCreate}
+      />
 
-              <div className="grid md:grid-cols-2 gap-6 py-4">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="nombre">Nombre</Label>
-                    <Input
-                      id="nombre"
-                      className={PH}
-                      value={form.nombre}
-                      onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                      placeholder="Administrador, Gerente…"
-                      disabled={editing ? !canEdit : !canCreate}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="descripcion">Descripción</Label>
-                    <Input
-                      id="descripcion"
-                      className={PH}
-                      value={form.descripcion}
-                      onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-                      placeholder="Rol con privilegios…"
-                      disabled={editing ? !canEdit : !canCreate}
-                    />
-                  </div>
-                </div>
+      <RoleDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        editing={editing}
+        form={form}
+        canCreate={canCreate}
+        canEdit={canEdit}
+        submitting={submitting}
+        permLoading={permLoading}
+        permQuery={permQuery}
+        selectedCount={selectedCount}
+        groupedPermissions={groupedPermissions}
+        selectedPermissions={selectedPerms}
+        onFormChange={handleFormChange}
+        onPermQueryChange={handlePermQueryChange}
+        onTogglePermission={handleTogglePermission}
+        onToggleGroup={handleToggleGroup}
+        onCancel={handleCancelDialog}
+        onSubmit={save}
+      />
 
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="permQuery">Permisos</Label>
-                      <span className="text-xs text-muted-foreground">{selectedCount} seleccionados</span>
-                    </div>
-                    <Input
-                      id="permQuery"
-                      className={PH}
-                      placeholder="Buscar permiso (ej. usuarios, crear, oficinas)…"
-                      value={permQuery}
-                      onChange={(e) => setPermQuery(e.target.value)}
-                    />
-                  </div>
+      <RoleMetrics
+        totalRoles={totalRoles}
+        rolesSinPermisos={rolesSinPermisos}
+        permisosTotales={permisosTotales}
+      />
 
-                  <div className="h-[360px] overflow-auto rounded-md border p-3">
-                    {permLoading ? (
-                      <p className="text-sm text-muted-foreground">Cargando permisos…</p>
-                    ) : groupedPermissions.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Sin resultados</p>
-                    ) : (
-                      <div className="space-y-4">
-                        {groupedPermissions.map(([groupKey, items]) => (
-                          <div key={groupKey} className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Shield className="h-4 w-4 text-muted-foreground" />
-                                <h4 className="font-medium capitalize">{groupKey}</h4>
-                                <Badge variant="outline">{items.length}</Badge>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button type="button" size="sm" variant="outline" onClick={() => setGroup(groupKey, true)}>
-                                  Todo
-                                </Button>
-                                <Button type="button" size="sm" variant="ghost" onClick={() => setGroup(groupKey, false)}>
-                                  Desmarcar
-                                </Button>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-2">
-                              {items.map((p) => {
-                                const checked = selectedPerms.has(p.hid)
-                                return (
-                                  <label
-                                    key={p.hid}
-                                    className={`flex items-center gap-2 rounded-md border p-2 ${CB} hover:bg-secondary/20`}
-                                  >
-                                    <Checkbox
-                                      checked={checked}
-                                      onCheckedChange={(v) => togglePerm(p.hid, !!v)}
-                                    />
-                                    <div className="space-y-0.5">
-                                      <div className="text-sm font-medium">{p.nombre}</div>
-                                      {p.descripcion && (
-                                        <div className="text-xs text-muted-foreground">{p.descripcion}</div>
-                                      )}
-                                    </div>
-                                  </label>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-                <Button onClick={save} disabled={submitting || (!canCreate && !canEdit)}>
-                  {submitting ? "Guardando..." : editing ? "Actualizar" : "Crear"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* metricas */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total de roles</CardDescription>
-            <CardTitle className="text-2xl">{totalRoles}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Roles sin permisos</CardDescription>
-            <CardTitle className="text-2xl">{rolesSinPermisos}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Permisos asignados</CardDescription>
-            <CardTitle className="text-2xl">{permisosTotales}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* tabla */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            Roles
-          </CardTitle>
-          <CardDescription>Lista de roles y conteo de permisos asignados.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead className="w-[140px] text-right">Permisos</TableHead>
-                  <TableHead className="w-[220px] text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {roles.map((r) => (
-                  <TableRow key={r.id} className="hover:bg-secondary/20">
-                    <TableCell className="font-medium">{r.nombre}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.descripcion || "—"}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge variant="secondary">{r.permisosCount}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEdit(r)} disabled={!canEdit}>
-                        <Edit className="h-4 w-4 mr-1" /> Editar
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => deleteRole(r.id)} disabled={!canDelete}>
-                        <Trash2 className="h-4 w-4 mr-1" /> Eliminar
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {roles.length === 0 && !loading && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                      No hay roles para mostrar.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <RoleTable
+        roles={roles}
+        loading={loading}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        onEdit={openEdit}
+        onDelete={deleteRole}
+      />
     </div>
   )
 }
