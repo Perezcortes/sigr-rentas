@@ -3,7 +3,7 @@
 import type React from "react"
 import { createContext, useContext, useReducer, useEffect } from "react"
 import type { User, AuthState } from "@/types/auth"
-import { authenticateUser, fetchProfile, logoutServer, hasPermission as hasPermFn } from "@/lib/auth"
+import { authenticateUser, fetchProfile, logoutServer, hasPermission as hasPermFn } from "@/modules/auth/auth.service"
 
 type AuthAction =
   | { type: "LOGIN_START" }

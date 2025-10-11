@@ -1,7 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import PropietarioFullForm from "@/components/rental-tabs/PropietarioFullForm"
+import PropietarioFullForm from "@/modules/rentas/components/process-forms/PropietarioFullForm"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"

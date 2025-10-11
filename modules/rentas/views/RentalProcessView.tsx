@@ -14,12 +14,12 @@ import {
   User, Building2, FileText, Search, CheckCircle, Calendar,
   Upload, Download, Eye
 } from "lucide-react"
-import type { Rental } from "@/types/rental"
-import { api } from "@/lib/auth"
-import { InquilinoTab } from "@/components/rental-tabs/InquilinoTab"
-import { ObligadoTab } from "@/components/rental-tabs/ObligadoTab"
-import { PropietarioTab } from "@/components/rental-tabs/PropietarioTab"
-import { PropiedadTab } from "@/components/rental-tabs/PropiedadTab"
+import type { Rental } from "@/modules/rentas/types"
+import { api } from "@/modules/auth/auth.service"
+import { InquilinoTab } from "@/modules/rentas/components/process-forms/InquilinoTab"
+import { ObligadoTab } from "@/modules/rentas/components/process-forms/ObligadoTab"
+import { PropietarioTab } from "@/modules/rentas/components/process-forms/PropietarioTab"
+import { PropiedadTab } from "@/modules/rentas/components/process-forms/PropiedadTab"
 
 interface RentalProcessProps {
   rental: Rental

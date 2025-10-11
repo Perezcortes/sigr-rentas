@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { useAuth } from "@/contexts/auth-context"
-import { getRoleDisplayName } from "@/lib/auth"
+import { getRoleDisplayName } from "@/modules/auth/auth.service"
 import { User, Mail, Phone, Building2, Shield, Settings, Save } from "lucide-react"
 
 export function UserProfile() {

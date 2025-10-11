@@ -14,14 +14,14 @@ import {
   MAX_NEIGHBORHOOD,
   MAX_STREET,
   SELECT_FOCUS,
-} from "./constants"
+} from "../../../../components/branch-management/constants"
 import type {
   Branch,
   BranchFormErrors,
   BranchFormState,
   BranchTouched,
   PostalInfo,
-} from "./types"
+} from "../../../../components/branch-management/types"
 
 export type BranchDialogProps = {
   open: boolean

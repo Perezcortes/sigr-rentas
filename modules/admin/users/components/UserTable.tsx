@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Mail, Shield, Users, Edit, Trash2 } from "lucide-react"
 import type { UserRole } from "@/types/auth"
-import type { SystemUser } from "./types"
+import type { SystemUser } from "../types"
 
 export type UserTableProps = {
   users: SystemUser[]

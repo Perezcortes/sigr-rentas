@@ -1,7 +1,7 @@
 "use client"
 import { useMemo, useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { InquilinoFullForm } from "@/components/rental-tabs/InquilinoFullForm"
+import { InquilinoFullForm } from "@/modules/rentas/components/process-forms/InquilinoFullForm"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"

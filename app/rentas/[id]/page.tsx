@@ -2,9 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react"
 import { useParams, useSearchParams } from "next/navigation"
-import { RentalProcess } from "@/components/rental-process"
-import type { Rental, RentalStatus } from "@/types/rental"
-import { api } from "@/lib/auth"
+import { RentalProcess } from "@/modules/rentas/views/RentalProcessView"
+import type { Rental, RentalStatus } from "@/modules/rentas/types"
+import { api } from "@/modules/auth/auth.service"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 

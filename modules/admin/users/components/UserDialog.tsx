@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Building2, RefreshCw } from "lucide-react"
-import type { ApiRole, FormData, FormErrors, Office, OfficeId, SelectedOfficePill, SystemUser } from "./types"
-import { INPUT_FOCUS, SELECT_FOCUS } from "./constants"
+import type { ApiRole, FormData, FormErrors, Office, OfficeId, SelectedOfficePill, SystemUser } from "../types"
+import { INPUT_FOCUS, SELECT_FOCUS } from "../constants"
 
 export type UserDialogProps = {
   open: boolean

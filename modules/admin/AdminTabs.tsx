@@ -3,9 +3,9 @@
 import { useCallback, useMemo } from "react"
 import type { ReactNode, ComponentType } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { BranchManagement } from "@/components/branch-management"
-import { UserManagement } from "@/components/user-management"
-import { RoleManagement } from "@/components/role-management"
+import { BranchManagement } from "@/modules/admin/branches/BranchManagementView"
+import { UserManagement } from "@/modules/admin/users/UserManagementView"
+import { RoleManagement } from "@/modules/admin/roles/role-management"
 import { Building2, Users, Shield } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 

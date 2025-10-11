@@ -4,7 +4,7 @@ import type React from "react"
 import { useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
-import { hasPermission as hasPermLib } from "@/lib/auth"
+import { hasPermission as hasPermLib } from "@/modules/auth/auth.service"
 
 interface ProtectedRouteProps {
   children: React.ReactNode

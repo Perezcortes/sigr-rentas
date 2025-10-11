@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { api } from "@/lib/auth"
+import { api } from "@/modules/auth/auth.service"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/components/ui/use-toast"
 import {
@@ -19,7 +19,7 @@ import {
   MIN_BRANCH_NAME,
   PHONE_RE,
   POSTAL_RE,
-} from "./branch-management/constants"
+} from "./constants"
 import {
   Branch,
   BranchFilters,
@@ -28,11 +28,11 @@ import {
   BranchTouched,
   PostalInfo,
   initialBranchForm,
-} from "./branch-management/types"
-import { BranchManagementHeader } from "./branch-management/BranchManagementHeader"
-import { BranchDialog } from "./branch-management/BranchDialog"
-import { BranchFilters as BranchFiltersInputs } from "./branch-management/BranchFilters"
-import { BranchTable } from "./branch-management/BranchTable"
+} from "./types"
+import { BranchManagementHeader } from "./components/BranchManagementHeader"
+import { BranchDialog } from "./components/BranchDialog"
+import { BranchFilters as BranchFiltersInputs } from "./components/BranchFilters"
+import { BranchTable } from "./components/BranchTable"
 
 function toBranch(row: any): Branch {
   const id = String(row?.id ?? row?.uuid ?? crypto.randomUUID())

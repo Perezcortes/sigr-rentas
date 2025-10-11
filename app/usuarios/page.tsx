@@ -1,8 +1,8 @@
 "use client"
 
-import { ProtectedRoute } from "@/components/protected-route"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { UserManagement } from "@/components/user-management"
+import { ProtectedRoute } from "@/modules/core/protected-route"
+import { DashboardLayout } from "@/modules/core/dashboard-layout"
+import { UserManagement } from "@/modules/admin/users/UserManagementView"
 
 export default function UsuariosPage() {
   return (

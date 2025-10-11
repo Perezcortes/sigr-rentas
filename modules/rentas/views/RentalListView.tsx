@@ -19,11 +19,11 @@ import { Label } from "@/components/ui/label"
 import {
   Plus, Search, Eye, Edit, Home, Calendar, DollarSign, FileText, RefreshCw
 } from "lucide-react"
-import type { Rental, RentalStatus } from "@/types/rental"
-import { RentalProcess } from "@/components/rental-process"
+import type { Rental, RentalStatus } from "@/modules/rentas/types"
+import { RentalProcess } from "@/modules/rentas/views/RentalProcessView"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/contexts/auth-context"
-import { api } from "@/lib/auth"
+import { api } from "@/modules/auth/auth.service"
 
 /* ─────────────────────────────────────────
    Utils

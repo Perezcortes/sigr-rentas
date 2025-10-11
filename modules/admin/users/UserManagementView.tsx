@@ -5,10 +5,10 @@ import type { UserRole } from "@/types/auth"
 import { useToast } from "@/components/ui/use-toast"
 import Hashids from "hashids"
 import { useAuth } from "@/contexts/auth-context"
-import { UserManagementHeader } from "./user-management/UserManagementHeader"
-import { UserMetrics } from "./user-management/UserMetrics"
-import { UserTable } from "./user-management/UserTable"
-import { UserDialog } from "./user-management/UserDialog"
+import { UserManagementHeader } from "../../../components/user-management/UserManagementHeader"
+import { UserMetrics } from "../../../components/user-management/UserMetrics"
+import { UserTable } from "../../../components/user-management/UserTable"
+import { UserDialog } from "../../../components/user-management/UserDialog"
 import type {
   ApiRole,
   FormData,
@@ -17,7 +17,7 @@ import type {
   OfficeId,
   SelectedOfficePill,
   SystemUser,
-} from "./user-management/types"
+} from "../../../components/user-management/types"
 
 /* =================== API base =================== */
 const RAW = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000"

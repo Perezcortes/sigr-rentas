@@ -1,7 +1,7 @@
 "use client"
 
-import { ProtectedRoute } from "@/components/protected-route"
-import { DashboardLayout } from "@/components/dashboard-layout"
+import { ProtectedRoute } from "@/modules/core/protected-route"
+import { DashboardLayout } from "@/modules/core/dashboard-layout"
 import { AdminTabs } from "@/components/admin-tabs"
 
 export default function AdminPage() {

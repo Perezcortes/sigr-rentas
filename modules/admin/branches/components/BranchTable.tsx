@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Building2, Edit, Trash2 } from "lucide-react"
-import type { Branch } from "./types"
+import type { Branch } from "../types"
 
 type BranchTableProps = {
   branches: Branch[]

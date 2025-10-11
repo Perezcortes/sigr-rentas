@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
-import { api, hasPermission as hasPermLib } from "@/lib/auth"
+import { api, hasPermission as hasPermLib } from "@/modules/auth/auth.service"
 
 import { useToast } from "@/components/ui/use-toast"
-import { RoleManagementHeader } from "./role-management/RoleManagementHeader"
-import { RoleMetrics } from "./role-management/RoleMetrics"
-import { RoleTable } from "./role-management/RoleTable"
-import { RoleDialog } from "./role-management/RoleDialog"
-import type { PermissionGroup, PermissionItem, RoleForm, RoleRow } from "./role-management/types"
+import { RoleManagementHeader } from "../../../components/role-management/RoleManagementHeader"
+import { RoleMetrics } from "../../../components/role-management/RoleMetrics"
+import { RoleTable } from "../../../components/role-management/RoleTable"
+import { RoleDialog } from "../../../components/role-management/RoleDialog"
+import type { PermissionGroup, PermissionItem, RoleForm, RoleRow } from "../../../components/role-management/types"
 
 import Hashids from "hashids"
 
