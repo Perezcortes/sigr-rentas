@@ -3,7 +3,7 @@
 import type React from "react"
 import Logo from "@/public/sigr_images/LogoRentas.png"
 import Image from "next/image"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
@@ -24,6 +24,7 @@ import {
   RotateCcw,
   FileText,
   User,
+  User as UserIcon,
   LogOut,
   Menu,
   X,
@@ -31,6 +32,9 @@ import {
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
+import { ProfileDialog } from "@/modules/perfil/ProfileDialog" // Importamos el nuevo modal de perfil
+import { useToast } from "@/components/ui/use-toast" // Para notificaciones
+import { Loader2 } from "lucide-react" // Importación adicional para el ProfileDialog
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -43,7 +47,7 @@ const BASE = RAW.replace(/\/+$/, "")
 /** ===== Perfil desde /auth/profile ===== */
 type ApiOffice = { nombre?: string; name?: string; code?: string; city?: string }
 type ApiRole = { nombre?: string; name?: string; uid?: string } | string | null | undefined
-type ApiProfile = {
+export type ApiProfile = {
   id?: string
   email?: string
   name?: string
@@ -58,7 +62,7 @@ type MenuItem = {
   icon: React.ComponentType<{ className?: string }>
   label: string
   href: string
-  requires?: string[]  
+  requires?: string[]
 }
 const MENU_CATALOG: MenuItem[] = [
   { icon: BarChart3, label: "Dashboard", href: "/dashboard" },
@@ -95,45 +99,94 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const { toast } = useToast()
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profile, setProfile] = useState<ApiProfile | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false) // Estado del modal de perfil
+
+  // Función para obtener el perfil
+  const fetchProfile = useCallback(async (ac: AbortController) => {
+    try {
+      setLoadingProfile(true)
+      const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null
+      const res = await fetch(`${BASE}/auth/profile`, {
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        cache: "no-store",
+        signal: ac.signal,
+      })
+      if (res.status === 401) {
+        setProfile(null)
+        logout()
+        router.push("/")
+        return
+      }
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `Error ${res.status}`)
+      }
+      const data: ApiProfile = await res.json()
+      setProfile(data)
+    } catch (e) {
+      if (!ac.signal.aborted) {
+        console.error("auth/profile error:", e)
+        setProfile(null)
+      }
+    } finally {
+      if (!ac.signal.aborted) setLoadingProfile(false)
+    }
+  }, [logout, router])
 
   useEffect(() => {
     const ac = new AbortController()
-    ;(async () => {
-      try {
-        setLoadingProfile(true)
-        const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null
-        const res = await fetch(`${BASE}/auth/profile`, {
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          cache: "no-store",
-          signal: ac.signal,
-        })
-        if (res.status === 401) {
-          setProfile(null)
-          logout()
-          router.push("/")
-          return
-        }
-        if (!res.ok) {
-          const text = await res.text()
-          throw new Error(text || `Error ${res.status}`)
-        }
-        const data: ApiProfile = await res.json()
-        setProfile(data)
-      } catch (e) {
-        if (!ac.signal.aborted) {
-          console.error("auth/profile error:", e)
-          setProfile(null)
-        }
-      } finally {
-        if (!ac.signal.aborted) setLoadingProfile(false)
-      }
-    })()
+    fetchProfile(ac)
     return () => ac.abort()
-  }, [logout, router])
+  }, [fetchProfile])
+
+
+
+  useEffect(() => {
+    const ac = new AbortController()
+    fetchProfile(ac)
+    return () => ac.abort()
+  }, [fetchProfile])
+
+  /** Lógica de Actualización del Perfil (PATCH /auth/profile) */
+  const handleProfileUpdate = async (data: { name: string; email: string }) => {
+    const token = localStorage.getItem("access_token")
+
+    if (!token) {
+      toast({
+        title: "Error de autenticación",
+        description: "Sesión expirada. Por favor, vuelve a iniciar sesión.",
+        variant: "destructive",
+      });
+      logout();
+      return;
+    }
+
+    const res = await fetch(`${BASE}/auth/profile`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ message: "Error desconocido al actualizar." }))
+      throw new Error(errorData.message || "Fallo en la actualización del perfil.");
+    }
+
+    // Si la actualización es exitosa, volvemos a cargar el perfil para reflejar los cambios.
+    const ac = new AbortController();
+    await fetchProfile(ac);
+    ac.abort(); // Cancelar por si acaso
+
+    // No lanza toast aquí, lo hace el ProfileDialog
+  }
 
   /** Derivados de perfil */
   const displayName = useMemo(() => {
@@ -159,7 +212,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     const can = (requires?: string[]) => {
       if (!requires || requires.length === 0) return true
-      if (adminByRole) return true 
+      if (adminByRole) return true
       return requires.some(req => perms.has(req.trim().toLowerCase()))
     }
 
@@ -181,9 +234,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-200 ease-in-out lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         <div className="flex h-full flex-col">
           {/* Logo */}
@@ -241,11 +293,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
+                <DropdownMenuItem onClick={() => setIsProfileModalOpen(true)}>
+                  <UserIcon className="mr-2 h-4 w-4" />
                   Perfil
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem disabled>
                   <Settings className="mr-2 h-4 w-4" />
                   Configuración
                 </DropdownMenuItem>
@@ -283,6 +335,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Page content */}
         <main className="py-8 px-4 sm:px-6 lg:px-8">{children}</main>
       </div>
+      {/* Modal de Perfil */}
+      <ProfileDialog
+        open={isProfileModalOpen}
+        onOpenChange={setIsProfileModalOpen}
+        currentProfile={profile}
+        officeName={officeName}
+        roleLabel={roleLabel}
+        onProfileUpdate={handleProfileUpdate}
+      />
     </div>
   )
 }
