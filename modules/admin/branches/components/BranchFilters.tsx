@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { INPUT_FOCUS, SELECT_FOCUS } from "../../../../components/branch-management/constants"
+import { INPUT_FOCUS, SELECT_FOCUS } from "../constants"
 
 export type BranchFiltersProps = {
   searchValue: string

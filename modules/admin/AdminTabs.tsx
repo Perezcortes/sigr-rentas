@@ -5,7 +5,7 @@ import type { ReactNode, ComponentType } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BranchManagement } from "@/modules/admin/branches/BranchManagementView"
 import { UserManagement } from "@/modules/admin/users/UserManagementView"
-import { RoleManagement } from "@/modules/admin/roles/role-management"
+import { RoleManagement } from "@/modules/admin/roles/RoleManagementView"
 import { Building2, Users, Shield } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 
@@ -40,7 +40,7 @@ export function AdminTabs() {
     if (!user) return ""
     const direct = normalizeRole((user as unknown as Record<string, unknown>).role ?? user.role)
     if (direct) return direct
-    const recordUser: Record<string, unknown> = user && typeof user === "object" ? (user as Record<string, unknown>) : {}
+    const recordUser: Record<string, unknown> = user && typeof user === "object" ? (user as unknown as Record<string, unknown>) : {}
     const alt = typeof recordUser.role_name === "string"
       ? recordUser.role_name
       : typeof recordUser.roleName === "string"

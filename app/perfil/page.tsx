@@ -2,7 +2,7 @@
 
 import { ProtectedRoute } from "@/modules/core/protected-route"
 import { DashboardLayout } from "@/modules/core/dashboard-layout"
-import { UserProfile } from "@/components/user-profile"
+import { UserProfile } from "@/modules/perfil/UserProfileView"
 
 export default function PerfilPage() {
   return (

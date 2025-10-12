@@ -5,11 +5,11 @@ import { useAuth } from "@/contexts/auth-context"
 import { api, hasPermission as hasPermLib } from "@/modules/auth/auth.service"
 
 import { useToast } from "@/components/ui/use-toast"
-import { RoleManagementHeader } from "../../../components/role-management/RoleManagementHeader"
-import { RoleMetrics } from "../../../components/role-management/RoleMetrics"
-import { RoleTable } from "../../../components/role-management/RoleTable"
-import { RoleDialog } from "../../../components/role-management/RoleDialog"
-import type { PermissionGroup, PermissionItem, RoleForm, RoleRow } from "../../../components/role-management/types"
+import { RoleManagementHeader } from "../roles/components/RoleManagementHeader"
+import { RoleMetrics } from "../roles/components/RoleMetrics"
+import { RoleTable } from "../roles/components/RoleTable"
+import { RoleDialog } from "../roles/components/RoleDialog"
+import type { PermissionGroup, PermissionItem, RoleForm, RoleRow } from "./types"
 
 import Hashids from "hashids"
 

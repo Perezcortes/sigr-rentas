@@ -2,7 +2,7 @@
 
 import { ProtectedRoute } from "@/modules/core/protected-route"
 import { DashboardLayout } from "@/modules/core/dashboard-layout"
-import { AdminTabs } from "@/components/admin-tabs"
+import { AdminTabs } from "@/modules/admin/AdminTabs"
 
 export default function AdminPage() {
   return (
