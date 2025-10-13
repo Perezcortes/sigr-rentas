@@ -1,16 +1,16 @@
 "use client"
 
-import { ProtectedRoute } from "@/components/protected-route"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { DashboardStats } from "@/components/dashboard-stats"
-import { RentalsChart } from "@/components/rentals-chart"
-import { ProspectsChart } from "@/components/prospects-chart"
-import { MessageCenter } from "@/components/message-center"
-import { QuickAccess } from "@/components/quick-access"
+import { ProtectedRoute } from "@/modules/core/protected-route"
+import { DashboardLayout } from "@/modules/core/dashboard-layout"
+import { DashboardStats } from "@/modules/dashboard/DashboardStats"
+import { RentalsChart } from "@/modules/dashboard/RentalsChart"
+import { ProspectsChart } from "@/modules/dashboard/ProspectsChart"
+import { MessageCenter } from "@/modules/dashboard/MessageCenter"
+import { QuickAccess } from "@/modules/dashboard/QuickAccess"
 
 export default function DashboardPage() {
   return (
-    <ProtectedRoute requiredPermission="dashboard">
+    <ProtectedRoute>
       <DashboardLayout>
         <div className="space-y-6">
           {/* Page Header */}

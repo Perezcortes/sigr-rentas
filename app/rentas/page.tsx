@@ -1,8 +1,8 @@
 "use client"
 
-import { ProtectedRoute } from "@/components/protected-route"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { RentalManagement } from "@/components/rental-management"
+import { ProtectedRoute } from "@/modules/core/protected-route"
+import { DashboardLayout } from "@/modules/core/dashboard-layout"
+import { RentalManagement } from "@/modules/rentas/views/RentalListView"
 
 export default function RentasPage() {
   return (

@@ -1,8 +1,8 @@
 "use client"
 
-import { ProtectedRoute } from "@/components/protected-route"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { UserProfile } from "@/components/user-profile"
+import { ProtectedRoute } from "@/modules/core/protected-route"
+import { DashboardLayout } from "@/modules/core/dashboard-layout"
+import { UserProfile } from "@/modules/perfil/UserProfileView"
 
 export default function PerfilPage() {
   return (
