@@ -44,62 +44,69 @@ const statusColors: Record<RentalStatus, string> = {
 
 /* map row -> Rental (igual que antes) */
 function toRental(row: any): Rental {
-  const inq = row?.inquilino ?? {}
-  const prop = row?.propietario ?? {}
-  const obl = row?.obligado_solidario ?? null
-  const house = row?.propiedad ?? {}
-  const status: RentalStatus = (row?.status as RentalStatus) ?? (row?.estado as RentalStatus) ?? "en_proceso"
+  const inqData = row?.inquilino?.pf || row?.inquilino?.pm || {};
+  const inqTipoPersona = row?.inquilino?.tipo_persona;
+
+  const propData = row?.propietario?.pf || row?.propietario?.pm || {};
+  const propTipoPersona = row?.propietario?.tipo_persona;
+
+  const oblData = row?.obligado_solidario?.pf || row?.obligado_solidario?.pm || {};
+  const oblTipoPersona = row?.obligado_solidario?.tipo_persona;
+
+  const house = row?.propiedad ?? {};
+  const status: RentalStatus = row?.status as RentalStatus;
 
   return {
-    id: String(row?.id ?? row?.uuid ?? crypto.randomUUID()),
+    id: String(row?.id ?? crypto.randomUUID()),
     status,
-    createdAt: String(row?.created_at ?? row?.createdAt ?? "").slice(0, 10),
-    updatedAt: String(row?.updated_at ?? row?.updatedAt ?? "").slice(0, 10),
+    createdAt: String(row?.created_at ?? "").slice(0, 10),
+    updatedAt: String(row?.updated_at ?? "").slice(0, 0),
     inquilino: {
-      type: (inq?.tipo_persona ?? "fisica") === "moral" ? "moral" : "fisica",
-      nombre: inq?.nombre_completo ?? null,
-      razonSocial: inq?.razon_social ?? null,
-      nombreComercial: inq?.nombre_comercial ?? null,
-      representante: inq?.representante_legal ?? null,
-      telefono: inq?.telefono ?? "",
-      correo: inq?.correo ?? "",
+      type: inqTipoPersona === 'PM' ? 'moral' : 'fisica',
+      nombre: inqTipoPersona === 'PF' ? `${inqData?.nombres} ${inqData?.apellido_p} ${inqData?.apellido_m}`.trim() : null,
+      razonSocial: inqTipoPersona === 'PM' ? inqData?.razon_social : null,
+      nombreComercial: inqTipoPersona === 'PM' ? inqData?.nombre_comercial : null,
+      representante: inqTipoPersona === 'PM' ? inqData?.representante_legal : null,
+      telefono: row?.inquilino?.tel_cel ?? row?.inquilino?.tel_fijo ?? null,
+      correo: row?.inquilino?.email ?? null,
     },
     propietario: {
-      type: (prop?.tipo_persona ?? "fisica") === "moral" ? "moral" : "fisica",
-      nombre: prop?.nombre_completo ?? null,
-      razonSocial: prop?.razon_social ?? null,
-      nombreComercial: prop?.nombre_comercial ?? null,
-      representante: prop?.representante_legal ?? null,
-      telefono: prop?.telefono ?? "",
-      correo: prop?.correo ?? "",
+      type: propTipoPersona === 'PM' ? 'moral' : 'fisica',
+      nombre: propTipoPersona === 'PF' ? `${propData?.nombres} ${propData?.apellido_p} ${propData?.apellido_m}`.trim() : null,
+      razonSocial: propTipoPersona === 'PM' ? propData?.razon_social : null,
+      nombreComercial: propTipoPersona === 'PM' ? propData?.nombre_comercial : null, // <-- Añadido
+      representante: propTipoPersona === 'PM' ? propData?.representante_legal : null, // <-- Añadido
+      telefono: row?.propietario?.telefono ?? null,
+      correo: row?.propietario?.email ?? null,
     },
-    obligadoSolidario: obl
+    obligadoSolidario: oblTipoPersona
       ? {
-          type: (obl?.tipo_persona ?? "fisica") === "moral" ? "moral" : "fisica",
-          nombre: obl?.nombre_completo ?? null,
-          razonSocial: obl?.razon_social ?? null,
-          nombreComercial: obl?.nombre_comercial ?? null,
-          representante: obl?.representante_legal ?? null,
-          telefono: obl?.telefono ?? "",
-          correo: obl?.correo ?? "",
-        }
+        type: oblTipoPersona === 'PM' ? 'moral' : 'fisica',
+        nombre: oblTipoPersona === 'PF' ? `${oblData?.nombres} ${oblData?.apellido_p} ${oblData?.apellido_m}`.trim() : null,
+        razonSocial: oblTipoPersona === 'PM' ? oblData?.razon_social : null,
+        nombreComercial: oblTipoPersona === 'PM' ? oblData?.nombre_comercial : null, // <-- Añadido
+        representante: oblTipoPersona === 'PM' ? oblData?.representante_legal : null, // <-- Añadido
+        telefono: row?.obligado_solidario?.tel_cel ?? row?.obligado_solidario?.tel_fijo ?? null,
+        correo: row?.obligado_solidario?.email ?? null,
+      }
       : undefined,
     propiedad: {
-      tipo: house?.tipo ?? "",
-      cp: house?.codigo_postal ?? house?.cp ?? "",
-      estado: String(house?.estado_id ?? house?.estado ?? ""),
-      ciudad: String(house?.ciudad_id ?? house?.ciudad ?? ""),
-      colonia: house?.colonia ?? "",
-      calle: house?.calle ?? "",
-      numero: house?.numero ?? "",
-      interior: house?.interior ?? "",
-      metros: Number(house?.metros_cuadrados ?? house?.metros ?? 0),
-      renta: Number(house?.monto_renta ?? house?.renta ?? 0),
-      referencia: house?.referencia ?? "",
+      id: String(house?.id ?? null),
+      tipo: house?.tipo_inmueble ?? house?.tipo ?? null,
+      cp: house?.codigo_postal ?? house?.cp ?? null,
+      estado: String(house?.estado ?? house?.estado_id ?? null),
+      ciudad: String(house?.ciudad ?? house?.ciudad_id ?? null),
+      colonia: house?.colonia ?? null,
+      calle: house?.calle ?? null,
+      numero: house?.num_ext ?? house?.numero ?? null,
+      interior: house?.num_int ?? house?.interior ?? null,
+      metros: Number(house?.metros_cuadrados ?? 0),
+      renta: Number(house?.monto_renta ?? 0),
+      referencia: house?.referencias_ubicacion ?? null,
     },
     documentos: Array.isArray(row?.documentos) ? row.documentos : [],
     activacion: row?.activacion ?? undefined,
-  }
+  };
 }
 
 /* ─────────────────────────────────────────
@@ -166,19 +173,19 @@ export function RentalManagement() {
 
     const ac = new AbortController()
     setLoading(true)
-    ;(async () => {
-      try {
-        const raw = await api("/rentals", { method: "GET", signal: ac.signal as any })
-        const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.result ?? [])
-        setRentals(list.map(toRental))
-      } catch (e: any) {
-        if (e?.name !== "AbortError") {
-          toast({ title: "Error al cargar", description: e?.message ?? "No se pudieron obtener las rentas", variant: "destructive" })
+      ; (async () => {
+        try {
+          const raw = await api("/rentals", { method: "GET", signal: ac.signal as any })
+          const list: any[] = Array.isArray(raw) ? raw : (raw?.data ?? raw?.result ?? [])
+          setRentals(list.map(toRental))
+        } catch (e: any) {
+          if (e?.name !== "AbortError") {
+            toast({ title: "Error al cargar", description: e?.message ?? "No se pudieron obtener las rentas", variant: "destructive" })
+          }
+        } finally {
+          setLoading(false)
         }
-      } finally {
-        setLoading(false)
-      }
-    })()
+      })()
 
     return () => ac.abort()
   }, [canView, toast])
@@ -257,10 +264,10 @@ export function RentalManagement() {
         // opcionales de moral (si aplica)
         ...(qf.tipoPersona === "moral"
           ? {
-              razon_social: (qf.razonSocial ?? "").trim() || undefined,
-              nombre_comercial: (qf.nombreComercial ?? "").trim() || undefined,
-              representante_legal: (qf.representanteLegal ?? "").trim() || undefined,
-            }
+            razon_social: (qf.razonSocial ?? "").trim() || undefined,
+            nombre_comercial: (qf.nombreComercial ?? "").trim() || undefined,
+            representante_legal: (qf.representanteLegal ?? "").trim() || undefined,
+          }
           : {}),
       },
       propietario: {
@@ -350,23 +357,23 @@ export function RentalManagement() {
                             setQf((s) =>
                               v === "fisica"
                                 ? {
-                                    ...s,
-                                    tipoPersona: v,
-                                    nombreCompleto: s.nombreCompleto ?? "",
-                                    // limpia campos de moral
-                                    razonSocial: "",
-                                    nombreComercial: "",
-                                    representanteLegal: "",
-                                  }
+                                  ...s,
+                                  tipoPersona: v,
+                                  nombreCompleto: s.nombreCompleto ?? "",
+                                  // limpia campos de moral
+                                  razonSocial: "",
+                                  nombreComercial: "",
+                                  representanteLegal: "",
+                                }
                                 : {
-                                    ...s,
-                                    tipoPersona: v,
-                                    razonSocial: s.razonSocial ?? "",
-                                    nombreComercial: s.nombreComercial ?? "",
-                                    representanteLegal: s.representanteLegal ?? "",
-                                    // limpia campo de física
-                                    nombreCompleto: "",
-                                  }
+                                  ...s,
+                                  tipoPersona: v,
+                                  razonSocial: s.razonSocial ?? "",
+                                  nombreComercial: s.nombreComercial ?? "",
+                                  representanteLegal: s.representanteLegal ?? "",
+                                  // limpia campo de física
+                                  nombreCompleto: "",
+                                }
                             )}
                         >
                           <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
@@ -410,7 +417,7 @@ export function RentalManagement() {
                         <div className="space-y-1.5 md:col-span-2" key="fisica">
                           <Label>Nombre completo <span className="text-destructive">*</span></Label>
                           <Input
-                            value={qf.nombreCompleto ?? ""} 
+                            value={qf.nombreCompleto ?? ""}
                             onChange={(e) => setQf((s) => ({ ...s, nombreCompleto: e.target.value }))}
                             placeholder="Ej. Ana Patricia Hernández"
                           />
@@ -422,7 +429,7 @@ export function RentalManagement() {
                           <div className="space-y-1.5 md:col-span-2" key="moral-razon">
                             <Label>Razón social <span className="text-destructive">*</span></Label>
                             <Input
-                              value={qf.razonSocial ?? ""} 
+                              value={qf.razonSocial ?? ""}
                               onChange={(e) => setQf((s) => ({ ...s, razonSocial: e.target.value }))}
                               placeholder="Ej. Inversiones XYZ, S.A. de C.V."
                             />

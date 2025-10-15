@@ -1,3 +1,5 @@
+// src/modules/rentas/types.ts
+
 export type RentalStatus = "apartada" | "en_proceso" | "rentada" | "cancelada" | "rechazada" | "rescindida"
 
 export type PersonType = "fisica" | "moral"
@@ -5,28 +7,28 @@ export type PersonType = "fisica" | "moral"
 export interface Person {
   type: PersonType
   // Persona Física
-  nombre?: string
-  telefono?: string
-  correo?: string
+  nombre: string | null
+  telefono: string | null
+  correo: string | null
   // Persona Moral
-  razonSocial?: string
-  nombreComercial?: string
-  representante?: string
+  razonSocial: string | null
+  nombreComercial: string | null
+  representante: string | null
 }
 
 export interface Property {
-  id?: string
-  tipo: string
-  cp: string
-  estado: string
-  ciudad: string
-  colonia: string
-  calle: string
-  numero: string
-  interior?: string
-  referencia?: string
-  metros: number
-  renta: number
+  id?: string | null
+  tipo: string | null
+  cp: string | null
+  estado: string | null
+  ciudad: string | null
+  colonia: string | null
+  calle: string | null
+  numero: string | null
+  interior: string | null
+  referencia: string | null
+  metros: number | null
+  renta: number | null
 }
 
 export interface Document {
@@ -41,12 +43,12 @@ export interface Document {
 export interface Rental {
   id: string
   status: RentalStatus
-  createdAt: string
-  updatedAt: string
+  createdAt: string | null
+  updatedAt: string | null
 
   // Process data
   inquilino: Person
-  obligadoSolidario?: Person
+  obligadoSolidario?: Person | null
   propietario: Person
   propiedad: Property
 
