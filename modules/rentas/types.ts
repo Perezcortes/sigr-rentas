@@ -14,6 +14,8 @@ export interface Person {
   razonSocial: string | null
   nombreComercial: string | null
   representante: string | null
+  rawData: any;
+  fullFormData?: any
 }
 
 export interface Property {
