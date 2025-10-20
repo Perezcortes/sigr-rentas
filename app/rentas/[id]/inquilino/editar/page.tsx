@@ -2,64 +2,38 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import TenantEditForm from '@/modules/rentas/components/TenantEditForm';
-import { TenantFormData, formDataToCreateDto, tenantEntityToFormData } from '@/types/tenant';
-import { tenantService } from '@/lib/api-tenant';
+import { useParams, useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft, Save } from 'lucide-react';
+import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
+import TenantEditForm from '@/modules/rentas/components/TenantEditForm';
+import { TenantFormData } from '@/types/tenant';
 
 export default function EditTenantPage() {
-  const router = useRouter();
   const params = useParams();
+  const router = useRouter();
   const { toast } = useToast();
-  const [initialData, setInitialData] = useState<TenantFormData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(true);
-
-  const rentalId = params?.id ? parseInt(params.id as string) : null;
+  const rentalId = params.id as string;
+  
+  const [formData, setFormData] = useState<TenantFormData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const fetchTenantData = async () => {
-      if (!rentalId) return;
-
-      try {
-        const tenant = await tenantService.getTenantByRentalId(rentalId);
-        const formData = tenantEntityToFormData(tenant);
-        setInitialData(formData);
-      } catch (error: any) {
-        console.error('Error al cargar datos del inquilino:', error);
-        toast({
-          title: 'Error',
-          description: 'No se pudieron cargar los datos del inquilino',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsFetching(false);
-      }
-    };
-
     fetchTenantData();
-  }, [rentalId, toast]);
+  }, [rentalId]);
 
-  const handleSave = async (formData: TenantFormData) => {
-    if (!rentalId) return;
-
-    setIsLoading(true);
+  const fetchTenantData = async () => {
     try {
-      const tenantDto = formDataToCreateDto(formData);
-      await tenantService.updateTenant(rentalId, tenantDto);
-
-      toast({
-        title: 'Éxito',
-        description: 'Datos del inquilino actualizados correctamente',
-      });
-
-      router.push(`/rentas/${rentalId}`);
+      const response = await api.get(`/rentals/${rentalId}/inquilino`);
+      setFormData(response.data);
     } catch (error: any) {
-      console.error('Error al actualizar inquilino:', error);
+      console.error('Error al cargar datos del inquilino:', error);
       toast({
         title: 'Error',
-        description: error?.response?.data?.message || 'Error al actualizar los datos',
+        description: 'No se pudieron cargar los datos del inquilino',
         variant: 'destructive',
       });
     } finally {
@@ -67,41 +41,91 @@ export default function EditTenantPage() {
     }
   };
 
+// page.tsx
+const handleSave = async (data: any) => {
+  try {
+    setIsSaving(true);
+    const response = await api.put(`/rentals/${rentalId}/inquilino`, data);
+    //console.log('Respuesta del servidor:', response.data);
+
+    toast({
+      title: 'Éxito',
+      description: 'Datos actualizados correctamente',
+    });
+
+    router.push(`/rentas/${rentalId}`);
+  } catch (error: any) {
+    //console.error('Error al actualizar inquilino:', error);
+    toast({
+      title: 'Error',
+      description: error?.response?.data?.message || error.message || 'No se pudo actualizar',
+      variant: 'destructive',
+    });
+  } finally {
+    setIsSaving(false);
+  }
+};
+
   const handleCancel = () => {
     router.push(`/rentas/${rentalId}`);
   };
 
-  if (isFetching) {
+  if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Cargando datos...</p>
-          </div>
+      <div className="container mx-auto py-6">
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Cargando datos del inquilino...</p>
         </div>
       </div>
     );
   }
 
-  if (!initialData) {
+  if (!formData) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="text-center">
-          <p className="text-red-600">No se encontraron datos del inquilino</p>
+      <div className="container mx-auto py-6">
+        <div className="text-center py-12">
+          <p className="text-gray-600">No se encontraron datos del inquilino</p>
+          <Button onClick={handleCancel} className="mt-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Volver
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <TenantEditForm
-        initialData={initialData}
-        onSave={handleSave}
-        onCancel={handleCancel}
-        isLoading={isLoading}
-      />
+    <div className="container mx-auto py-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold">Editar Inquilino</h1>
+          <p className="text-gray-600 mt-1">
+            Actualiza la información del inquilino para la renta #{rentalId}
+          </p>
+        </div>
+        <Button variant="outline" onClick={handleCancel}>
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Volver
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Datos del Inquilino</CardTitle>
+          <CardDescription>
+            Modifica la información según sea necesario
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TenantEditForm
+            initialData={formData}
+            onSave={handleSave}
+            onCancel={handleCancel}
+            isLoading={isSaving}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

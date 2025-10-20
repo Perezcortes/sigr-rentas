@@ -20,30 +20,45 @@ import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import NewProcessDialog from '../components/NewProcessDialog';
 
+// Interfaces basadas en el backend actualizado
+interface InquilinoPf {
+  id: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string;
+  email: string;
+}
+
+interface InquilinoPm {
+  id: string;
+  nombreEmpresa: string;
+  email: string;
+}
+
+interface Propiedad {
+  id: string;
+  tipoPropiedad: string;
+  domCalle: string;
+  domNumExt: string;
+  domColonia: string;
+  domMunicipio: string;
+  domEstado: string;
+  precioRenta: number;
+}
+
 interface Rental {
-  id: number;
-  status: string;
-  tipo_origen: string;
-  monto_renta?: number;
-  inquilino: {
-    id: number;
-    tipo_persona: string;
-    email?: string;
-    pf?: {
-      nombres?: string;
-      apellido_p?: string;
-      apellido_m?: string;
-    };
-    pm?: {
-      razon_social?: string;
-    };
-  };
-  propiedad: {
-    id: number;
-    direccion?: string;
-    area?: number;
-  };
-  created_at: string;
+  id: string;
+  tipoInquilino: 'fisica' | 'moral';
+  tipoPropiedad: string;
+  estado: 'activa' | 'inactiva' | 'cancelada' | 'pendiente';
+  observaciones?: string;
+  usuarioCreacion: string;
+  fechaCreacion: string;
+  fechaActualizacion: string;
+  // Relaciones transformadas (arrays)
+  inquilinos_pf: InquilinoPf[];
+  inquilinos_pm: InquilinoPm[];
+  propiedades: Propiedad[];
 }
 
 interface Stats {
@@ -90,49 +105,79 @@ export default function RentalListView() {
 
   const calculateStats = (rentals: Rental[]) => {
     const total = rentals.length;
-    const en_proceso = rentals.filter((r) => r.status === 'en_proceso').length;
-    const rentadas = rentals.filter((r) => r.status === 'aprobada').length;
-    const pendientes = rentals.filter((r) => r.status === 'apartada').length;
+    const en_proceso = rentals.filter((r) => r.estado === 'pendiente').length;
+    const rentadas = rentals.filter((r) => r.estado === 'activa').length;
+    const pendientes = rentals.filter((r) => r.estado === 'pendiente').length;
 
     setStats({ total, en_proceso, rentadas, pendientes });
   };
 
-  const getInquilinoName = (rental: Rental) => {
-    if (rental.inquilino.tipo_persona === 'PF' && rental.inquilino.pf) {
-      const { nombres, apellido_p, apellido_m } = rental.inquilino.pf;
-      return `${nombres || ''} ${apellido_p || ''} ${apellido_m || ''}`.trim();
+  const getInquilinoInfo = (rental: Rental) => {
+    if (rental.tipoInquilino === 'fisica' && rental.inquilinos_pf.length > 0) {
+      const inquilino = rental.inquilinos_pf[0];
+      return {
+        nombre: `${inquilino.nombres} ${inquilino.apellidoPaterno} ${inquilino.apellidoMaterno}`.trim(),
+        tipo: 'Persona Física'
+      };
+    } else if (rental.tipoInquilino === 'moral' && rental.inquilinos_pm.length > 0) {
+      const inquilino = rental.inquilinos_pm[0];
+      return {
+        nombre: inquilino.nombreEmpresa,
+        tipo: 'Persona Moral'
+      };
     }
-    if (rental.inquilino.tipo_persona === 'PM' && rental.inquilino.pm) {
-      return rental.inquilino.pm.razon_social || 'N/A';
-    }
-    return 'N/A';
+    return { nombre: 'N/A', tipo: 'No especificado' };
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      apartada: 'secondary',
-      en_proceso: 'default',
-      aprobada: 'outline',
-      rentada: 'outline',
-      rechazada: 'destructive',
+  const getPropiedadInfo = (rental: Rental) => {
+    if (rental.propiedades.length > 0) {
+      const propiedad = rental.propiedades[0];
+      return {
+        direccion: `${propiedad.domCalle} ${propiedad.domNumExt}, ${propiedad.domColonia}`,
+        municipio: `${propiedad.domMunicipio}, ${propiedad.domEstado}`,
+        tipo: propiedad.tipoPropiedad,
+        precio: propiedad.precioRenta
+      };
+    }
+    return { 
+      direccion: 'N/A', 
+      municipio: 'N/A', 
+      tipo: 'No especificado',
+      precio: 0
     };
-    const labels: Record<string, string> = {
-      apartada: 'Apartada',
-      en_proceso: 'En Proceso',
-      aprobada: 'Rentada',
-      rentada: 'Rentada',
-      rechazada: 'Rechazada',
+  };
+
+  const getStatusBadge = (estado: string) => {
+    const variants = {
+      pendiente: 'secondary',
+      activa: 'outline',
+      cancelada: 'destructive',
+      inactiva: 'outline'
+    } as const;
+
+    const labels = {
+      pendiente: 'En Proceso',
+      activa: 'Rentada',
+      cancelada: 'Cancelada',
+      inactiva: 'Inactiva'
     };
-    return <Badge variant={variants[status] || 'outline'}>{labels[status] || status}</Badge>;
+
+    return (
+      <Badge variant={variants[estado as keyof typeof variants] || 'outline'}>
+        {labels[estado as keyof typeof labels] || estado}
+      </Badge>
+    );
   };
 
   const filteredRentals = rentals.filter((rental) => {
-    const inquilinoName = getInquilinoName(rental).toLowerCase();
+    const inquilinoInfo = getInquilinoInfo(rental);
+    const propiedadInfo = getPropiedadInfo(rental);
     const search = searchTerm.toLowerCase();
+    
     return (
-      inquilinoName.includes(search) ||
-      rental.id.toString().includes(search) ||
-      rental.propiedad.direccion?.toLowerCase().includes(search)
+      inquilinoInfo.nombre.toLowerCase().includes(search) ||
+      propiedadInfo.direccion.toLowerCase().includes(search) ||
+      rental.id.toLowerCase().includes(search)
     );
   });
 
@@ -174,7 +219,7 @@ export default function RentalListView() {
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-2">Rentadas</p>
+                <p className="text-sm text-gray-600 mb-2">Activas</p>
                 <p className="text-4xl font-bold">{stats.rentadas}</p>
               </div>
               <DollarSign className="w-6 h-6 text-green-500" />
@@ -249,57 +294,60 @@ export default function RentalListView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRentals.map((rental) => (
-                  <TableRow key={rental.id} className="border-gray-100">
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{getInquilinoName(rental)}</p>
-                        <p className="text-xs text-gray-600">
-                          {rental.inquilino.tipo_persona === 'PF' ? 'Persona Física' : 'Persona Moral'}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-gray-900">{rental.propiedad.direccion || 'N/A'}</p>
-                        <p className="text-xs text-gray-600">
-                          {rental.propiedad.area ? `${rental.propiedad.area}m²` : ''}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {rental.monto_renta ? (
+                {filteredRentals.map((rental) => {
+                  const inquilinoInfo = getInquilinoInfo(rental);
+                  const propiedadInfo = getPropiedadInfo(rental);
+                  
+                  return (
+                    <TableRow key={rental.id} className="border-gray-100">
+                      <TableCell>
                         <div>
-                          <p className="font-medium">${rental.monto_renta.toLocaleString()}</p>
+                          <p className="font-medium">{inquilinoInfo.nombre}</p>
+                          <p className="text-xs text-gray-600">{inquilinoInfo.tipo}</p>
                         </div>
-                      ) : (
-                        'N/A'
-                      )}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(rental.status)}</TableCell>
-                    <TableCell>{new Date(rental.created_at).toLocaleDateString('es-MX')}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => router.push(`/rentas/${rental.id}`)}
-                          className="hover:bg-gray-100"
-                        >
-                          <Eye className="w-4 h-4 text-gray-600" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => router.push(`/rentas/${rental.id}/inquilino/editar`)}
-                          className="hover:bg-gray-100"
-                        >
-                          <Edit className="w-4 h-4 text-gray-600" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            {propiedadInfo.tipo} - {propiedadInfo.direccion}
+                          </p>
+                          <p className="text-xs text-gray-600">{propiedadInfo.municipio}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {propiedadInfo.precio > 0 ? (
+                          <div>
+                            <p className="font-medium">${propiedadInfo.precio.toLocaleString()}</p>
+                          </div>
+                        ) : (
+                          'N/A'
+                        )}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(rental.estado)}</TableCell>
+                      <TableCell>{new Date(rental.fechaCreacion).toLocaleDateString('es-MX')}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => router.push(`/rentas/${rental.id}/preview`)}
+                            className="hover:bg-gray-100"
+                          >
+                            <Eye className="w-4 h-4 text-gray-600" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => router.push(`/rentas/${rental.id}/inquilino/editar`)}
+                            className="hover:bg-gray-100"
+                          >
+                            <Edit className="w-4 h-4 text-gray-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

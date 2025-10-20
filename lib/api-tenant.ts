@@ -1,4 +1,4 @@
-// lib/api-tenant.ts
+// lib/api-tenant.ts 
 import { api } from './api';
 import { TenantEntity, CreateTenantDto } from '@/types/tenant';
 
@@ -6,7 +6,7 @@ export const tenantService = {
   /**
    * Obtener inquilino por ID de renta
    */
-  async getTenantByRentalId(rentalId: number): Promise<TenantEntity> {
+  async getTenantByRentalId(rentalId: string): Promise<TenantEntity> { // Cambiado a string (UUID)
     const response = await api.get(`/rentals/${rentalId}`);
     return response.data.inquilino;
   },
@@ -14,21 +14,25 @@ export const tenantService = {
   /**
    * Actualizar inquilino
    */
-  async updateTenant(rentalId: number, data: CreateTenantDto): Promise<TenantEntity> {
+  async updateTenant(rentalId: string, data: CreateTenantDto): Promise<TenantEntity> { // Cambiado a string
     const response = await api.put(`/rentals/${rentalId}/inquilino`, data);
     return response.data.inquilino;
   },
 
   /**
-   * Crear inquilino (dentro de una nueva renta manual)
+   * Crear renta manual completa
    */
-  async createTenant(rentalData: {
-    tipo_origen: string;
-    creado_por_user_id: number;
-    inquilino: CreateTenantDto;
-    propietario: any; // Se puede tipar después
-    propiedad: any;
-    obligado_solidario?: any;
+  async createManualRental(rentalData: {
+    tipoInquilino: 'fisica' | 'moral';
+    tipoPropietario?: 'fisica' | 'moral';
+    tipoPropiedad?: string;
+    observaciones?: string;
+    usuarioCreacion: string;
+    propiedad?: any;
+    inquilinoPf?: any;
+    inquilinoPm?: any;
+    propietarioPf?: any;
+    propietarioPm?: any;
   }): Promise<any> {
     const response = await api.post('/rentals/manual', rentalData);
     return response.data;

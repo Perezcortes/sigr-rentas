@@ -1,11 +1,11 @@
 // types/tenant.ts
 
 export enum TipoPersona {
-  FISICA = 'PF',
-  MORAL = 'PM',
+  FISICA = "PF",
+  MORAL = "PM",
 }
 
-// ===== ENTIDADES DE RESPUESTA (API) =====
+// ENTIDADES DE RESPUESTA (API)
 export interface PersonaFisicaEntity {
   id: number;
   nombres?: string;
@@ -130,7 +130,7 @@ export interface UsoPropiedadEntity {
 
 export interface TenantEntity {
   id: number;
-  tipo_persona: 'PF' | 'PM';
+  tipo_persona: "PF" | "PM";
   email?: string;
   rfc?: string;
   tel_cel?: string;
@@ -157,7 +157,7 @@ export interface TenantEntity {
   updated_at: Date;
 }
 
-// ===== DTOs PARA CREAR/ACTUALIZAR =====
+// DTOs PARA CREAR/ACTUALIZAR 
 export interface PersonaFisicaDto {
   nombres?: string;
   apellido_p?: string;
@@ -310,7 +310,7 @@ export interface CreateTenantDto {
   pm_referencias?: ReferenciasComercialesDto;
 }
 
-// ===== TIPO UNIFICADO PARA FORMULARIOS =====
+// TIPO UNIFICADO PARA FORMULARIOS 
 export interface TenantFormData {
   tipo_persona: TipoPersona;
   // Datos Comunes
@@ -446,7 +446,7 @@ export interface TenantFormData {
   uso_motivo_cambio?: string;
 }
 
-// ===== FUNCIONES DE TRANSFORMACIÓN =====
+// FUNCIONES DE TRANSFORMACIÓN
 export function tenantEntityToFormData(tenant: TenantEntity): TenantFormData {
   const formData: TenantFormData = {
     tipo_persona: tenant.tipo_persona as TipoPersona,
@@ -479,7 +479,9 @@ export function tenantEntityToFormData(tenant: TenantEntity): TenantFormData {
     formData.pf_nacionalidad = tenant.pf.nacionalidad;
     formData.pf_sexo = tenant.pf.sexo;
     formData.pf_edo_civil = tenant.pf.edo_civil;
-    formData.pf_fecha_nac = tenant.pf.fecha_nac ? new Date(tenant.pf.fecha_nac).toISOString().split('T')[0] : undefined;
+    formData.pf_fecha_nac = tenant.pf.fecha_nac
+      ? new Date(tenant.pf.fecha_nac).toISOString().split("T")[0]
+      : undefined;
     formData.pf_curp = tenant.pf.curp;
     formData.pf_datos_conyuge = tenant.pf.datos_conyuge;
     // Empleo
@@ -495,7 +497,9 @@ export function tenantEntityToFormData(tenant: TenantEntity): TenantFormData {
     formData.pf_col_empresa = tenant.pf.col_empresa;
     formData.pf_mun_empresa = tenant.pf.mun_empresa;
     formData.pf_edo_empresa = tenant.pf.edo_empresa;
-    formData.pf_fecha_ing_empleo = tenant.pf.fecha_ing_empleo ? new Date(tenant.pf.fecha_ing_empleo).toISOString().split('T')[0] : undefined;
+    formData.pf_fecha_ing_empleo = tenant.pf.fecha_ing_empleo
+      ? new Date(tenant.pf.fecha_ing_empleo).toISOString().split("T")[0]
+      : undefined;
     formData.pf_ing_comprobable = tenant.pf.ing_comprobable;
     formData.pf_ing_no_comprobable = tenant.pf.ing_no_comprobable;
     formData.pf_dependientes = tenant.pf.dependientes;
@@ -541,7 +545,9 @@ export function tenantEntityToFormData(tenant: TenantEntity): TenantFormData {
     formData.pm_notario_apellido_p = tenant.pm.notario_apellido_p;
     formData.pm_notario_apellido_m = tenant.pm.notario_apellido_m;
     formData.pm_escritura_num = tenant.pm.escritura_num;
-    formData.pm_fecha_const = tenant.pm.fecha_const ? new Date(tenant.pm.fecha_const).toISOString().split('T')[0] : undefined;
+    formData.pm_fecha_const = tenant.pm.fecha_const
+      ? new Date(tenant.pm.fecha_const).toISOString().split("T")[0]
+      : undefined;
     formData.pm_notario_num = tenant.pm.notario_num;
     formData.pm_ciudad_reg = tenant.pm.ciudad_reg;
     formData.pm_estado_reg = tenant.pm.estado_reg;
@@ -556,11 +562,15 @@ export function tenantEntityToFormData(tenant: TenantEntity): TenantFormData {
     formData.pm_apoderado_facultades = tenant.pm.apoderado_facultades;
     formData.pm_apo_escritura_num = tenant.pm.apo_escritura_num;
     formData.pm_apo_notario_num = tenant.pm.apo_notario_num;
-    formData.pm_apo_fecha_escritura = tenant.pm.apo_fecha_escritura ? new Date(tenant.pm.apo_fecha_escritura).toISOString().split('T')[0] : undefined;
+    formData.pm_apo_fecha_escritura = tenant.pm.apo_fecha_escritura
+      ? new Date(tenant.pm.apo_fecha_escritura).toISOString().split("T")[0]
+      : undefined;
     formData.pm_apo_reg_num = tenant.pm.apo_reg_num;
     formData.pm_apo_ciudad_reg = tenant.pm.apo_ciudad_reg;
     formData.pm_apo_estado_reg = tenant.pm.apo_estado_reg;
-    formData.pm_apo_fecha_inscripcion = tenant.pm.apo_fecha_inscripcion ? new Date(tenant.pm.apo_fecha_inscripcion).toISOString().split('T')[0] : undefined;
+    formData.pm_apo_fecha_inscripcion = tenant.pm.apo_fecha_inscripcion
+      ? new Date(tenant.pm.apo_fecha_inscripcion).toISOString().split("T")[0]
+      : undefined;
     formData.pm_apo_tipo_rep = tenant.pm.apo_tipo_rep;
     // Referencias comerciales
     formData.pm_c1_empresa = tenant.pm.ref_c1_empresa;
@@ -749,4 +759,499 @@ export function formDataToCreateDto(formData: TenantFormData): CreateTenantDto {
   };
 
   return dto;
+}
+
+// Transformar datos del formulario en estructura para solicitud de alquiler
+export function formDataToRentalRequest(
+  formData: TenantFormData,
+  usuarioCreacion: string
+): any {
+  const baseRental = {
+    tipoInquilino:
+      formData.tipo_persona === TipoPersona.FISICA ? "fisica" : "moral",
+    tipoPropietario: "fisica", // Por defecto
+    tipoPropiedad: formData.uso_tipo_inm || "casa",
+    observaciones: "Creado desde formulario manual",
+    usuarioCreacion: usuarioCreacion,
+  };
+
+  if (formData.tipo_persona === TipoPersona.FISICA) {
+    return {
+      ...baseRental,
+      inquilinoPf: {
+        // Datos Personales
+        nombres: formData.pf_nombres,
+        apellidoPaterno: formData.pf_apellido_p,
+        apellidoMaterno: formData.pf_apellido_m,
+        nacionalidad: formData.pf_nacionalidad,
+        sexo: formData.pf_sexo,
+        estadoCivil: formData.pf_edo_civil,
+        email: formData.email,
+        tipoIdentificacion: formData.id_tipo,
+        fechaNacimiento: formData.pf_fecha_nac,
+        rfc: formData.rfc,
+        curp: formData.pf_curp,
+        telefonoCelular: formData.tel_cel,
+        telefonoFijo: formData.tel_fijo,
+
+        // Domicilio Actual
+        domCalle: formData.dom_calle,
+        domNumExt: formData.dom_num_ext,
+        domNumInt: formData.dom_num_int,
+        domCp: formData.dom_cp,
+        domColonia: formData.dom_colonia,
+        domMunicipio: formData.dom_municipio,
+        domEstado: formData.dom_estado,
+        situacionHabitacional: formData.sit_hab,
+
+        // Datos del Arrendador Actual
+        arrActNombre: formData.arr_act_nombre,
+        arrActApellidoP: formData.arr_act_apellido_p,
+        arrActApellidoM: formData.arr_act_apellido_m,
+        arrActTel: formData.arr_act_tel,
+        arrActRenta: formData.arr_act_renta,
+        arrActAno: formData.arr_act_ano,
+
+        // Empleo e Ingresos
+        profesion: formData.pf_profesion,
+        tipoEmpleo: formData.pf_tipo_empleo,
+        nomEmpresa: formData.pf_nom_empresa,
+        fechaIngEmpleo: formData.pf_fecha_ing_empleo,
+        ingComprobable: formData.pf_ing_comprobable,
+        ingNoComprobable: formData.pf_ing_no_comprobable,
+      },
+      // Propiedad básica (se puede completar después)
+      propiedad: {
+        tipoPropiedad: formData.uso_tipo_inm || "casa",
+        domCalle: "Por definir",
+        domNumExt: "0",
+        domCp: "00000",
+        domColonia: "Por definir",
+        domMunicipio: "Por definir",
+        domEstado: "Por definir",
+        precioRenta: 0,
+      },
+    };
+  } else {
+    return {
+      ...baseRental,
+      inquilinoPm: {
+        // Datos de la Empresa
+        razonSocial: formData.pm_razon_social,
+        email: formData.email,
+        dominio: formData.pm_dominio,
+        rfc: formData.rfc,
+        telefono: formData.tel_cel,
+        ingMensual: formData.pm_ing_mensual,
+
+        // Domicilio de la Empresa
+        domCalle: formData.dom_calle,
+        domNumExt: formData.dom_num_ext,
+        domNumInt: formData.dom_num_int,
+        domCp: formData.dom_cp,
+        domColonia: formData.dom_colonia,
+        domMunicipio: formData.dom_municipio,
+        domEstado: formData.dom_estado,
+
+        // Acta Constitutiva
+        notarioNombre: formData.pm_notario_nombre,
+        notarioApellidoP: formData.pm_notario_apellido_p,
+        notarioApellidoM: formData.pm_notario_apellido_m,
+        escrituraNum: formData.pm_escritura_num,
+        fechaConst: formData.pm_fecha_const,
+        notarioNum: formData.pm_notario_num,
+        ciudadReg: formData.pm_ciudad_reg,
+        estadoReg: formData.pm_estado_reg,
+        regNum: formData.pm_reg_num,
+        giroComercial: formData.uso_giro_neg,
+      },
+      // Propiedad básica
+      propiedad: {
+        tipoPropiedad: formData.uso_tipo_inm || "local_comercial",
+        domCalle: "Por definir",
+        domNumExt: "0",
+        domCp: "00000",
+        domColonia: "Por definir",
+        domMunicipio: "Por definir",
+        domEstado: "Por definir",
+        precioRenta: 0,
+      },
+    };
+  }
+}
+
+// Transformar datos del formulario en estructura para alquiler manual con datos completos
+export function formDataToManualRental(
+  formData: TenantFormData,
+  usuarioCreacion: string
+): any {
+  const baseRental = {
+    tipoInquilino:
+      formData.tipo_persona === TipoPersona.FISICA ? "fisica" : "moral",
+    tipoPropietario: "fisica" as const,
+    tipoPropiedad: mapTipoPropiedad(formData.uso_tipo_inm),
+    observaciones: "Creado desde formulario manual",
+    usuarioCreacion: usuarioCreacion,
+  };
+
+  const propiedadBasica = {
+    tipoPropiedad: mapTipoPropiedad(formData.uso_tipo_inm),
+    domCalle: "Por definir",
+    domNumExt: "S/N",
+    domCp: "00000",
+    domColonia: "Por definir",
+    domMunicipio: "Por definir",
+    domEstado: "Por definir",
+    precioRenta: 0,
+    usoSuelo: "habitacional" as const,
+    permiteMascotas: false,
+    ivaRenta: "incluido" as const,
+    frecuenciaPago: "mensual" as const,
+    condicionesPago: "Por definir",
+    depositoGarantia: 0,
+    pagaMantenimiento: false,
+    requiereSeguro: false,
+  };
+
+  if (formData.tipo_persona === TipoPersona.FISICA) {
+    return {
+      ...baseRental,
+      inquilinoPf: {
+        // ESTRUCTURA ANIDADA QUE ESPERA EL BACKEND
+        datosPersonales: {
+          nombres: formData.pf_nombres || "",
+          apellidoPaterno: formData.pf_apellido_p || "",
+          apellidoMaterno: formData.pf_apellido_m || "",
+          nacionalidad: mapNacionalidad(formData.pf_nacionalidad),
+          nacionalidadEspecifique:
+            formData.pf_nacionalidad === "Otra"
+              ? formData.pf_nacionalidad
+              : undefined,
+          sexo: mapSexo(formData.pf_sexo),
+          estadoCivil: mapEstadoCivil(formData.pf_edo_civil),
+          email: formData.email || "",
+          tipoIdentificacion: mapTipoIdentificacion(formData.id_tipo),
+          fechaNacimiento: formData.pf_fecha_nac
+            ? new Date(formData.pf_fecha_nac)
+            : new Date("2000-01-01"),
+          rfc: formData.rfc || "",
+          curp: formData.pf_curp || "",
+          telefonoCelular: formData.tel_cel || "",
+          telefonoFijo: formData.tel_fijo || "",
+        },
+
+        domicilioActual: {
+          domCalle: formData.dom_calle || "",
+          domNumExt: formData.dom_num_ext || "",
+          domNumInt: formData.dom_num_int || "",
+          domCp: formData.dom_cp || "",
+          domColonia: formData.dom_colonia || "",
+          domMunicipio: formData.dom_municipio || "",
+          domEstado: formData.dom_estado || "",
+          domReferencias: formData.pm_ref_ubi || "",
+        },
+
+        situacionHabitacional: mapSituacionHabitacional(formData.sit_hab),
+
+        // Arrendador actual (si aplica)
+        ...(formData.sit_hab === "Inquilino" && {
+          arrendadorActual: {
+            nombres: formData.arr_act_nombre || "",
+            apellidoPaterno: formData.arr_act_apellido_p || "",
+            apellidoMaterno: formData.arr_act_apellido_m || "",
+            telefono: formData.arr_act_tel || "",
+            rentaActual: formData.arr_act_renta || 0,
+            ocupaDesde: formData.arr_act_ano?.toString() || "",
+          },
+        }),
+
+        empleo: {
+          profesion: formData.pf_profesion || "",
+          tipoEmpleo: mapTipoEmpleo(formData.pf_tipo_empleo),
+          empresaTrabaja: formData.pf_nom_empresa || "",
+          fechaIngreso: formData.pf_fecha_ing_empleo
+            ? new Date(formData.pf_fecha_ing_empleo)
+            : new Date(),
+          ingresoComprobable: formData.pf_ing_comprobable || 0,
+          ingresoNoComprobable: formData.pf_ing_no_comprobable || 0,
+        },
+
+        ingresos: {
+          ingresoComprobable: formData.pf_ing_comprobable || 0,
+          ingresoNoComprobable: formData.pf_ing_no_comprobable || 0,
+          numeroDependientes: formData.pf_dependientes || 0,
+          otraPersonaAporta: formData.pf_ing_fam_aporta || false,
+        },
+
+        // Datos del cónyuge (si aplica)
+        ...(formData.pf_edo_civil === "Casado" && {
+          conyuge: {
+            nombres: formData.pf_datos_conyuge || "",
+            apellidoPaterno: formData.pf_apellido_p || "",
+            apellidoMaterno: formData.pf_apellido_m || "",
+            telefono: formData.tel_fijo || "",
+          },
+        }),
+      },
+      propiedad: propiedadBasica,
+
+      propietarioPf: {
+        datosPersonales: {
+          nombres: "Por definir",
+          apellidoPaterno: "Por definir",
+          apellidoMaterno: "Por definir",
+          email: "propietario@example.com",
+          telefonoCelular: "0000000000",
+          estadoCivil: "soltero",
+          sexo: "masculino",
+          nacionalidad: "mexicana",
+          tipoIdentificacion: "ine",
+          fechaNacimiento: new Date("2000-01-01"),
+        },
+        domicilioActual: {
+          domCalle: "Por definir",
+          domNumExt: "S/N",
+          domCp: "00000",
+          domColonia: "Por definir",
+          domMunicipio: "Por definir",
+          domEstado: "Por definir",
+        },
+        formaPago: "transferencia",
+      },
+    };
+  } else {
+    // PERSONA MORAL
+    return {
+      ...baseRental,
+      inquilinoPm: {
+        // DATOS DE LA EMPRESA (OBLIGATORIOS)
+        nombreEmpresa: formData.pm_razon_social || "EMPRESA POR DEFINIR",
+        email: formData.email || "info@empresa.com",
+        dominio: formData.pm_dominio || "",
+        rfc: formData.rfc || "XAXX010101000",
+        telefono: formData.tel_cel || "0000000000",
+        ingresoMensual: formData.pm_ing_mensual || 0,
+
+        // DOMICILIO DE LA EMPRESA (OBLIGATORIOS)
+        domCalle: formData.dom_calle || "POR DEFINIR",
+        domNumExt: formData.dom_num_ext || "S/N",
+        domNumInt: formData.dom_num_int || "",
+        domCp: formData.dom_cp || "00000",
+        domColonia: formData.dom_colonia || "POR DEFINIR",
+        domMunicipio: formData.dom_municipio || "POR DEFINIR",
+        domEstado: formData.dom_estado || "POR DEFINIR",
+
+        // ACTA CONSTITUTIVA (TODOS OBLIGATORIOS)
+        notarioNombres: formData.pm_notario_nombre || "NOTARIO POR DEFINIR",
+        notarioApellidoPaterno:
+          formData.pm_notario_apellido_p || "APELLIDO PATERNO",
+        notarioApellidoMaterno:
+          formData.pm_notario_apellido_m || "APELLIDO MATERNO",
+        numeroEscritura: formData.pm_escritura_num || "NUMERO ESCRITURA",
+        fechaConstitucion: formData.pm_fecha_const
+          ? new Date(formData.pm_fecha_const)
+          : new Date("2000-01-01"),
+        notarioNumero: (formData.pm_notario_num ?? 1).toString(),
+        ciudadRegistro: formData.pm_ciudad_reg || "CIUDAD REGISTRO",
+        estadoRegistro: formData.pm_estado_reg || "ESTADO REGISTRO",
+        numeroRegistro: formData.pm_reg_num || "NUMERO REGISTRO",
+        giroComercial: formData.uso_giro_neg || "GIRO COMERCIAL",
+      },
+      propiedad: {
+        ...propiedadBasica,
+        tipoPropiedad: mapTipoPropiedad(formData.uso_tipo_inm),
+        usoSuelo: "comercial" as const,
+      },
+
+      propietarioPm: {
+        nombreEmpresa: "PROPIETARIO POR DEFINIR",
+        rfc: "XXX010101XXX",
+        email: "propietario@example.com",
+        telefono: "0000000000",
+        domCalle: "POR DEFINIR",
+        domNumExt: "S/N",
+        domCp: "00000",
+        domColonia: "POR DEFINIR",
+        domMunicipio: "POR DEFINIR",
+        domEstado: "POR DEFINIR",
+        formaPago: "transferencia",
+        notarioNombres: "NOTARIO POR DEFINIR",
+        notarioApellidoPaterno: "APELLIDO PATERNO",
+        notarioApellidoMaterno: "APELLIDO MATERNO",
+        numeroEscritura: "NUMERO ESCRITURA",
+        fechaConstitucion: new Date("2000-01-01"),
+        notarioNumero: "1",
+        ciudadRegistro: "CIUDAD REGISTRO",
+        estadoRegistro: "ESTADO REGISTRO",
+        numeroRegistro: "NUMERO REGISTRO",
+        giroComercial: "GIRO COMERCIAL",
+      },
+    };
+  }
+}
+
+function mapTipoPropiedad(
+  tipo?: string
+):
+  | "casa"
+  | "departamento"
+  | "local_comercial"
+  | "oficina"
+  | "bodega"
+  | "nave_industrial"
+  | "consultorio"
+  | "terreno" {
+  if (!tipo) return "casa";
+
+  const map: Record<
+    string,
+    | "casa"
+    | "departamento"
+    | "local_comercial"
+    | "oficina"
+    | "bodega"
+    | "nave_industrial"
+    | "consultorio"
+    | "terreno"
+  > = {
+    Casa: "casa",
+    casa: "casa",
+    Departamento: "departamento",
+    departamento: "departamento",
+    "Local Comercial": "local_comercial",
+    Local: "local_comercial",
+    local_comercial: "local_comercial",
+    Oficina: "oficina",
+    oficina: "oficina",
+    Bodega: "bodega",
+    bodega: "bodega",
+    "Nave Industrial": "nave_industrial",
+    Nave: "nave_industrial",
+    nave_industrial: "nave_industrial",
+    Consultorio: "consultorio",
+    consultorio: "consultorio",
+    Terreno: "terreno",
+    terreno: "terreno",
+  };
+
+  return map[tipo] || "casa";
+}
+
+// Funciones auxiliares para mapear valores aceptan string | undefined
+function mapNacionalidad(nacionalidad?: string): "mexicana" | "extranjera" {
+  if (!nacionalidad) return "mexicana";
+
+  const map: Record<string, "mexicana" | "extranjera"> = {
+    Mexicana: "mexicana",
+    mexicana: "mexicana",
+    Otra: "extranjera",
+    extranjera: "extranjera",
+  };
+  return map[nacionalidad] || "mexicana";
+}
+
+function mapSexo(sexo?: string): "masculino" | "femenino" {
+  if (!sexo) return "masculino";
+
+  const map: Record<string, "masculino" | "femenino"> = {
+    Masculino: "masculino",
+    masculino: "masculino",
+    Femenino: "femenino",
+    femenino: "femenino",
+  };
+  return map[sexo] || "masculino";
+}
+
+function mapEstadoCivil(
+  estadoCivil?: string
+): "soltero" | "casado" | "divorciado" | "union_libre" {
+  if (!estadoCivil) return "soltero";
+
+  const map: Record<
+    string,
+    "soltero" | "casado" | "divorciado" | "union_libre"
+  > = {
+    Soltero: "soltero",
+    soltero: "soltero",
+    Casado: "casado",
+    casado: "casado",
+    Divorciado: "divorciado",
+    divorciado: "divorciado",
+    "Union Libre": "union_libre",
+    union_libre: "union_libre",
+  };
+  return map[estadoCivil] || "soltero";
+}
+
+function mapTipoIdentificacion(
+  tipo?: string
+): "ine" | "pasaporte" | "cedula" | "licencia" | "otro" {
+  if (!tipo) return "ine";
+
+  const map: Record<
+    string,
+    "ine" | "pasaporte" | "cedula" | "licencia" | "otro"
+  > = {
+    INE: "ine",
+    Pasaporte: "pasaporte",
+    Licencia: "licencia",
+    Otro: "otro",
+  };
+  return map[tipo] || "ine";
+}
+
+function mapSituacionHabitacional(
+  sit?: string
+):
+  | "inquilino"
+  | "pension_hotel"
+  | "con_familia"
+  | "propietario_pagando"
+  | "propietario_liberado" {
+  if (!sit) return "con_familia";
+
+  const map: Record<
+    string,
+    | "inquilino"
+    | "pension_hotel"
+    | "con_familia"
+    | "propietario_pagando"
+    | "propietario_liberado"
+  > = {
+    Inquilino: "inquilino",
+    Propietario: "propietario_liberado",
+    Familiar: "con_familia",
+    Otro: "con_familia",
+  };
+  return map[sit] || "con_familia";
+}
+
+function mapTipoEmpleo(
+  tipo?: string
+):
+  | "dueño_negocio"
+  | "empresario"
+  | "independiente"
+  | "empleado"
+  | "comisionista"
+  | "jubilado" {
+  if (!tipo) return "empleado";
+
+  const map: Record<
+    string,
+    | "dueño_negocio"
+    | "empresario"
+    | "independiente"
+    | "empleado"
+    | "comisionista"
+    | "jubilado"
+  > = {
+    Empleado: "empleado",
+    Independiente: "independiente",
+    Empresario: "empresario",
+    "Dueño de negocio": "dueño_negocio",
+    Comisionista: "comisionista",
+    Jubilado: "jubilado",
+  };
+  return map[tipo] || "empleado";
 }

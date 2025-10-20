@@ -9,13 +9,15 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { TenantFormData, TipoPersona } from '@/types/tenant';
 import { Save, ArrowLeft } from 'lucide-react';
-
-import DatosComunesForm from './tenant-forms/DatosComunesForm';
-import DatosPersonaFisicaForm from './tenant-forms/DatosPersonaFisicaForm';
+// Componentes de formularios específicos
+import UsoPropiedadForm from './tenant-forms/UsoPropiedadForm';
+import DatosEmpresaForm from './tenant-forms/DatosEmpresaForm';
+import ActaConstitutivaForm from './tenant-forms/ActaConstitutivaForm';
+import ApoderadoLegalForm from './tenant-forms/ApoderadoLegalForm';
+import ReferenciasComercialesForm from './tenant-forms/ReferenciasComercialesForm';
+import DatosPersonalesForm from './tenant-forms/DatosPersonalesForm';
 import EmpleoIngresosForm from './tenant-forms/EmpleoIngresosForm';
 import ReferenciasPersonalesForm from './tenant-forms/ReferenciasPersonalesForm';
-import DatosPersonaMoralForm from './tenant-forms/DatosPersonaMoralForm';
-import UsoPropiedadForm from './tenant-forms/UsoPropiedadForm';
 
 interface TenantEditFormProps {
   initialData?: TenantFormData;
@@ -50,7 +52,13 @@ export default function TenantEditForm({
       ...prev,
       tipo_persona: tipo,
     }));
-    setActiveTab('comunes');
+    
+    // Navegar al primer tab según el tipo de persona
+    if (tipo === TipoPersona.FISICA) {
+      setActiveTab('personales');
+    } else {
+      setActiveTab('empresa');
+    }
   };
 
   const handleSubmit = async () => {
@@ -60,6 +68,28 @@ export default function TenantEditForm({
       console.error('Error al guardar:', error);
     }
   };
+
+  // Configuración de tabs según tipo de persona
+  const getTabsConfig = () => {
+    if (formData.tipo_persona === TipoPersona.FISICA) {
+      return [
+        { value: 'personales', label: 'Datos Personales' },
+        { value: 'empleo', label: 'Empleo e Ingresos' },
+        { value: 'uso_propiedad', label: 'Uso de Propiedad' },
+        { value: 'referencias', label: 'Referencias' },
+      ];
+    } else {
+      return [
+        { value: 'empresa', label: 'Datos Empresa' },
+        { value: 'acta', label: 'Acta Constitutiva' },
+        { value: 'apoderado', label: 'Apoderado Legal' },
+        { value: 'uso_propiedad', label: 'Uso de Propiedad' },
+        { value: 'referencias', label: 'Referencias' },
+      ];
+    }
+  };
+
+  const tabsConfig = getTabsConfig();
 
   return (
     <div className="space-y-6">
@@ -83,19 +113,13 @@ export default function TenantEditForm({
       <Card>
         <CardContent className="pt-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${tabsConfig.length + 1}, 1fr)` }}>
               <TabsTrigger value="tipo">Tipo</TabsTrigger>
-              <TabsTrigger value="comunes">Comunes</TabsTrigger>
-              <TabsTrigger value="personales" disabled={!formData.tipo_persona}>
-                {formData.tipo_persona === TipoPersona.FISICA ? 'PF' : 'PM'}
-              </TabsTrigger>
-              {formData.tipo_persona === TipoPersona.FISICA && (
-                <>
-                  <TabsTrigger value="empleo">Empleo</TabsTrigger>
-                  <TabsTrigger value="referencias">Referencias</TabsTrigger>
-                </>
-              )}
-              <TabsTrigger value="uso_propiedad">Uso Propiedad</TabsTrigger>
+              {tabsConfig.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
             {/* Tab: Tipo de Persona */}
@@ -135,38 +159,51 @@ export default function TenantEditForm({
               </Card>
             </TabsContent>
 
-            {/* Tab: Datos Comunes */}
-            <TabsContent value="comunes" className="space-y-6">
-              <DatosComunesForm formData={formData} onChange={handleFieldChange} />
-            </TabsContent>
-
-            {/* Tab: Datos Personales (PF o PM) */}
-            <TabsContent value="personales" className="space-y-6">
-              {formData.tipo_persona === TipoPersona.FISICA ? (
-                <DatosPersonaFisicaForm formData={formData} onChange={handleFieldChange} />
-              ) : (
-                <DatosPersonaMoralForm formData={formData} onChange={handleFieldChange} />
-              )}
-            </TabsContent>
-
-            {/* Tab: Empleo e Ingresos (solo PF) */}
+            {/* TABS PARA PERSONA FÍSICA */}
             {formData.tipo_persona === TipoPersona.FISICA && (
-              <TabsContent value="empleo" className="space-y-6">
-                <EmpleoIngresosForm formData={formData} onChange={handleFieldChange} />
-              </TabsContent>
+              <>
+                <TabsContent value="personales" className="space-y-6">
+                  <DatosPersonalesForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+
+                <TabsContent value="empleo" className="space-y-6">
+                  <EmpleoIngresosForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+
+                <TabsContent value="uso_propiedad" className="space-y-6">
+                  <UsoPropiedadForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+
+                <TabsContent value="referencias" className="space-y-6">
+                  <ReferenciasPersonalesForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+              </>
             )}
 
-            {/* Tab: Referencias (solo PF) */}
-            {formData.tipo_persona === TipoPersona.FISICA && (
-              <TabsContent value="referencias" className="space-y-6">
-                <ReferenciasPersonalesForm formData={formData} onChange={handleFieldChange} />
-              </TabsContent>
-            )}
+            {/* TABS PARA PERSONA MORAL */}
+            {formData.tipo_persona === TipoPersona.MORAL && (
+              <>
+                <TabsContent value="empresa" className="space-y-6">
+                  <DatosEmpresaForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
 
-            {/* Tab: Uso de Propiedad */}
-            <TabsContent value="uso_propiedad" className="space-y-6">
-              <UsoPropiedadForm formData={formData} onChange={handleFieldChange} />
-            </TabsContent>
+                <TabsContent value="acta" className="space-y-6">
+                  <ActaConstitutivaForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+
+                <TabsContent value="apoderado" className="space-y-6">
+                  <ApoderadoLegalForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+
+                <TabsContent value="uso_propiedad" className="space-y-6">
+                  <UsoPropiedadForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+
+                <TabsContent value="referencias" className="space-y-6">
+                  <ReferenciasComercialesForm formData={formData} onChange={handleFieldChange} />
+                </TabsContent>
+              </>
+            )}
           </Tabs>
         </CardContent>
       </Card>
